@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+DEPRECATED: main_controller.py는 controller.py로 교체되었습니다.
+이 파일은 호환성을 위해 유지되지만 새 개발은 controller.py를 사용하세요.
+"""
 
 import os
 import sys

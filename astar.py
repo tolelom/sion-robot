@@ -1,3 +1,18 @@
+"""
+A* 경로 탐색 구현.
+
+인터페이스 규약 (Go, JS 구현과 동일하게 유지할 것):
+  입력: grid (0=통과가능, 1=장애물), start {x,y}, goal {x,y}
+  출력: path [{x,y}] — 빈 리스트면 경로 없음
+
+경계 조건:
+  - start == goal → [start] 반환
+  - goal이 장애물 → 빈 리스트 반환
+  - 경로 없음 → 빈 리스트 반환
+
+주의: 이 알고리즘은 Go(algorithms/astar.go)와 JS(hooks/usePathfinding.js)에도 동일하게 구현됨.
+      변경 시 세 곳 모두 동일하게 유지할 것.
+"""
 import heapq
 import math
 from dataclasses import dataclass
