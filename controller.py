@@ -3,12 +3,15 @@
 # controller.py — 스레드 오케스트레이션 전담
 # 상태 관리는 AGVState, 모드 전환은 ModeManager에 위임
 
+import logging
 import math
 import os
 import sys
 import threading
 import time
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 import cv2
 
@@ -27,18 +30,18 @@ from state import AGVState
 
 def camera_thread_main(stop_event: threading.Event) -> None:
     """카메라 keep-alive 스레드. 실패해도 메인을 죽이지 않음."""
-    print("[CAM] thread start")
+    logger.info("thread start")
     cap = None
     while not stop_event.is_set():
         try:
             if cap is None:
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
-                    print("[CAM] open failed. retry in 1s")
+                    logger.warning("open failed, retry in 1s")
                     cap = None
                     time.sleep(1.0)
                     continue
-                print("[CAM] opened")
+                logger.info("camera opened")
             ok, _ = cap.read()
             if not ok:
                 time.sleep(0.2)
@@ -47,7 +50,7 @@ def camera_thread_main(stop_event: threading.Event) -> None:
                 continue
             time.sleep(0.02)
         except Exception as e:
-            print("[CAM] exception:", e)
+            logger.error("camera exception: %s", e)
             if cap is not None:
                 try:
                     cap.release()
@@ -60,7 +63,7 @@ def camera_thread_main(stop_event: threading.Event) -> None:
             cap.release()
         except Exception:
             pass
-    print("[CAM] thread stop")
+    logger.info("camera thread stop")
 
 
 # =========================
@@ -87,11 +90,11 @@ def move_worker(
         )
         if path_cells is None:
             state.set_plan_result(False, "No path found")
-            print("[MOVE] No path found")
+            logger.warning("No path found")
             return
 
         for cx, cy in path_cells:
-            print(f"  cell ({cx:2d},{cy:2d})")
+            logger.debug("  cell (%2d,%2d)", cx, cy)
         waypoints_world = [cell_to_world(x, y, m.resolution) for x, y in path_cells]
         state.set_plan_result(True)
 
@@ -112,7 +115,7 @@ def move_worker(
         )
     except Exception as e:
         state.set_plan_result(False, f"move_worker exception: {e}")
-        print("[MOVE] Exception:", e)
+        logger.error("move_worker exception: %s", e)
 
 
 # =========================
@@ -120,13 +123,18 @@ def move_worker(
 # =========================
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
-    print("[MAIN] Loading map ...")
+    logger.info("Loading map ...")
     m = load_map(MAP_FILE)
     if m.start is None:
         raise RuntimeError("Start(S) not found in map")
@@ -152,7 +160,7 @@ def main() -> None:
     move_th: Optional[threading.Thread] = None
     last_pose_print = 0.0
 
-    print("[MAIN] Enter loop (Ctrl+C to stop)")
+    logger.info("Enter loop (Ctrl+C to stop)")
     try:
         while True:
             now = time.time()
@@ -182,19 +190,19 @@ def main() -> None:
                 if pose_world and pose_cell:
                     px, py, pth = pose_world
                     cx, cy = pose_cell
-                    print(f"[POSE] world=({px:.2f},{py:.2f},theta_deg={math.degrees(pth):.1f}) cell=({cx},{cy})")
+                    logger.debug("world=(%.2f,%.2f,theta_deg=%.1f) cell=(%s,%s)", px, py, math.degrees(pth), cx, cy)
                 else:
-                    print("[POSE] None")
+                    logger.debug("pose is None")
                 last_pose_print = now
 
             time.sleep(0.01)
 
     except KeyboardInterrupt:
-        print("[MAIN] KeyboardInterrupt -> stopping")
+        logger.info("KeyboardInterrupt -> stopping")
     finally:
         stop_event.set()
         time.sleep(0.2)
-        print("[MAIN] Exit")
+        logger.info("Exit")
 
 
 if __name__ == "__main__":

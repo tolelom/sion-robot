@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import threading
 import time
 from datetime import datetime
@@ -7,6 +8,8 @@ from datetime import datetime
 import websockets
 
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 """
 AGV WebSocket 클라이언트
@@ -40,7 +43,7 @@ class AGVWebSocketClient:
 
         while not self.connected:
             time.sleep(0.1)
-        print(f"Web Socket 연결 완료: {self.server_url}")
+        logger.info("Web Socket 연결 완료: %s", self.server_url)
 
     # 비동기 이벤트 루프 실행
     def _run_async_loop(self):
@@ -54,13 +57,13 @@ class AGVWebSocketClient:
             async with websockets.connect(self.server_url) as websocket:
                 self.websocket = websocket
                 self.connected = True
-                print(f"Web Socket 연결 시도: {self.server_url}")
+                logger.info("Web Socket 연결 시도: %s", self.server_url)
 
                 async for message in websocket:
                     await self._handle_message(message)
 
         except Exception as e:
-            print(f"Web Socket 연결 오류: {e}")
+            logger.error("Web Socket 연결 오류: %s", e)
             self.connected = False
 
     # 서버에서 받은 메시지 처리 함수
@@ -69,38 +72,38 @@ class AGVWebSocketClient:
             data = json.loads(message)
             msg_type = data.get("type")
             msg_data = data.get("data")
-            print(f"서버 메시지 수신: {msg_type}")
+            logger.debug("서버 메시지 수신: %s", msg_type)
 
             if msg_type == "command":
                 target_x = msg_data.get("target_x")
                 target_y = msg_data.get("target_y")
                 mode = msg_data.get("mode")
-                print(f"이동 명령 도착: ({target_x}, {target_y}), 모드: {mode}")
+                logger.info("이동 명령 도착: (%s, %s), 모드: %s", target_x, target_y, mode)
 
                 # TODO: 실제 이동 로직을 여기에 추가하세요
                 await self.execute_move_command(target_x, target_y, mode)
 
             elif msg_type == "mode_change":
                 new_mode = msg_data.get("mode")
-                print(f"모드 변경: {new_mode}")
+                logger.info("모드 변경: %s", new_mode)
 
                 # TODO: 모드 변경 로직을 여기에 추가하세요
                 await self.change_mode(new_mode)
 
             elif msg_type == "emergency_stop":
                 reason = msg_data.get("reason", "알 수 없음")  # 이 데이터가 백엔드에서 보내는 지 확인할 것
-                print(f"긴급 정지: {reason}")
+                logger.info("긴급 정지: %s", reason)
 
                 # TODO: 긴급 정지 로직을 여기에 추가하세요
                 await self.execute_emergency_stop(reason)
 
         except json.JSONDecodeError as e:
-            print(f"Json 파싱 오류: {e}")
+            logger.error("Json 파싱 오류: %s", e)
 
     # 메시지 전송 함수 (동기 함수에서 호출 가능)
     def _send_message(self, msg_type: str, data: Dict[Any, Any]):
         if not self.connected or not self.websocket:
-            print("Web Socket이 연결되지 않았습니다.")
+            logger.warning("Web Socket이 연결되지 않았습니다.")
             return
 
         message = {
@@ -127,7 +130,7 @@ class AGVWebSocketClient:
         }
 
         self._send_message("position", data)
-        print(f"위치 전송: x={x:.2f}, y={y:.2f}, angle={angle:.2f}")
+        logger.debug("위치 전송: x=%.2f, y=%.2f, angle=%.2f", x, y, angle)
 
     def send_status(self, status: dict):
         agv_status = {
@@ -153,7 +156,7 @@ class AGVWebSocketClient:
         }
 
         self._send_message("status", agv_status)
-        print(f"📊 상태 전송: mode={agv_status['mode']}, state={agv_status['state']}")
+        logger.debug("상태 전송: mode=%s, state=%s", agv_status['mode'], agv_status['state'])
 
     def send_log(self, message: str, level: str = "info"):
         data = {
@@ -162,7 +165,7 @@ class AGVWebSocketClient:
         }
 
         self._send_message("log", data)
-        print(f"📝 로그 전송: {message}")
+        logger.debug("로그 전송: %s", message)
 
     def send_target_found(self, enemy: dict):
         """타겟 발견 알림 전송"""
@@ -170,7 +173,7 @@ class AGVWebSocketClient:
             "enemy": enemy
         }
         self._send_message("target_found", data)
-        print(f"🎯 타겟 발견: {enemy.get('name', 'Unknown')}")
+        logger.info("타겟 발견: %s", enemy.get('name', 'Unknown'))
 
     def send_path_update(self, points: list, algorithm: str = "a_star"):
         """경로 업데이트 전송"""
@@ -188,7 +191,7 @@ class AGVWebSocketClient:
             "created_at": datetime.now().isoformat()
         }
         self._send_message("path_update", data)
-        print(f"🛣️ 경로 전송: {len(points)}개 포인트, 길이={total_length:.2f}m")
+        logger.debug("경로 전송: %d개 포인트, 길이=%.2fm", len(points), total_length)
 
     def _convert_state(self, status: dict) -> str:
         """상태 변환 (moving -> state)"""
@@ -254,20 +257,20 @@ class AGVWebSocketClient:
                 self.loop
             )
         self.connected = False
-        print("🔌 WebSocket 연결 종료")
+        logger.info("WebSocket 연결 종료")
 
     async def execute_move_command(self, target_x, target_y, mode):
         """이동 명령 실행"""
-        print(f"🚗 이동: ({target_x}, {target_y})")
+        logger.info("이동: (%s, %s)", target_x, target_y)
         # TODO: 실제 이동 로직
 
     async def change_mode(self, new_mode):
         """모드 변경"""
-        print(f"🔄 모드 변경: {new_mode}")
+        logger.info("모드 변경: %s", new_mode)
         # TODO: 모드 변경 로직
 
     async def execute_emergency_stop(self, reason):
         """긴급 정지"""
-        print(f"🛑 긴급 정지: {reason}")
+        logger.info("긴급 정지: %s", reason)
         # TODO: 긴급 정지 로직
 

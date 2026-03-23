@@ -1,8 +1,11 @@
+import logging
 import math
 import time
 from time import sleep
 from typing import List, Tuple, Optional, Callable
 from SCSCtrl import TTLServo
+
+logger = logging.getLogger(__name__)
 
 try:
     from jetbot import Robot  # JETANK 기본 제어
@@ -24,7 +27,7 @@ class JetankRobot:
 
     def __init__(self):
         if Robot is None:
-            print("[WARN] jetbot.Robot not found. Motor control disabled (dry-run).")
+            logger.warning("jetbot.Robot not found. Motor control disabled (dry-run).")
             self.robot = None
         else:
             self.robot = Robot()
@@ -32,7 +35,7 @@ class JetankRobot:
             TTLServo.servoAngleCtrl(2, -80, 1, 180)
             TTLServo.servoAngleCtrl(3, -60, 1, 180)
             TTLServo.servoAngleCtrl(4, -35, 1, 180)
-            print('ready!')
+            logger.info("ready")
             
 
     def _set_motors_safe(self, left: float, right: float):
@@ -40,7 +43,7 @@ class JetankRobot:
         right = float(max(-1.0, min(1.0, right)))
 
         if self.robot is None:
-            print(f"[MOTOR] (dry-run) left={left:.2f}, right={right:.2f}")
+            logger.debug("(dry-run) left=%.2f, right=%.2f", left, right)
             return
 
         # ✅ 포지셔널만 사용 (키워드 사용 금지!)
@@ -106,7 +109,7 @@ def follow_path_constant_speed(
       * pose_update_cb(...) 지속 호출
     """
     if len(waypoints_world) < 2:
-        print("[FOLLOW] Waypoints too short.")
+        logger.warning("Waypoints too short")
         x0, y0 = waypoints_world[0] if waypoints_world else (0.0, 0.0)
         return (x0, y0, 0.0)
 
@@ -188,7 +191,7 @@ def follow_path_constant_speed(
                 omega_real = omega_turn_norm * scale_omega_rad      # rad/s
                 turn_time = abs(angle_diff) / max(omega_real, 1e-6)
 
-                print(f"[FOLLOW] Segment {i}: TURN angle={math.degrees(angle_diff):.1f}deg, time={turn_time:.2f}s")
+                logger.debug("Segment %d: TURN angle=%.1fdeg, time=%.2fs", i, math.degrees(angle_diff), turn_time)
 
                 # v=0, omega=const, 실시간 적분
                 run_for_duration(
@@ -201,7 +204,7 @@ def follow_path_constant_speed(
 
                 theta_est = target_heading  # 목표 heading으로 정렬된 것으로 간주
             else:
-                print(f"[FOLLOW] Segment {i}: TURN skipped")
+                logger.debug("Segment %d: TURN skipped", i)
 
             # ----------------------------
             # 2) DRIVE
@@ -214,7 +217,7 @@ def follow_path_constant_speed(
             v_real = v_cmd * scale_v_mps
             drive_time = seg_len / max(v_real, 1e-6)
 
-            print(f"[FOLLOW] Segment {i}: DRIVE len={seg_len:.3f}m, v={v_cmd:.2f}, time={drive_time:.2f}s")
+            logger.debug("Segment %d: DRIVE len=%.3fm, v=%.2f, time=%.2fs", i, seg_len, v_cmd, drive_time)
 
             # omega=0, 직진 실시간 적분
             run_for_duration(
@@ -248,11 +251,11 @@ def follow_path_constant_speed(
                 TTLServo.servoAngleCtrl(3, -60, 1, 180)
                 TTLServo.servoAngleCtrl(4, -35, 1, 180)
                 sleep(2)
-                print('ready!')
+                logger.info("ready")
 
     finally:
         robot.stop()
 
     x, y, th = pose_est.get_pose()
-    print(f"[FOLLOW] Finished. est pose=({x:.2f},{y:.2f},theta_deg={math.degrees(th):.1f})")
+    logger.info("Finished. est pose=(%.2f,%.2f,theta_deg=%.1f)", x, y, math.degrees(th))
     return (x, y, th)

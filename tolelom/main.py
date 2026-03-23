@@ -1,8 +1,11 @@
+import logging
 import time
 import threading
 import queue
 from datetime import datetime
 from typing import Optional, Any, Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 from tolelom.web_socket_client import AGVWebSocketClient
 
@@ -124,13 +127,13 @@ if __name__ == "__main__":
     enqueue_log("AGV 주기 전송 시작", "info")
 
     try:
-        print("\n📡 주기 전송 중... (Ctrl+C로 종료)")
+        logger.info("주기 전송 중... (Ctrl+C로 종료)")
         while True:
             time.sleep(1)
             # 예시: 이벤트성 메시지
             # enqueue_target_found({...})
     except KeyboardInterrupt:
-        print("\n\n종료 중...")
+        logger.info("종료 중...")
     finally:
         stop_evt.set()
         th.join(timeout=2.0)
