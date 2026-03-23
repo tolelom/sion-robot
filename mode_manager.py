@@ -47,13 +47,13 @@ class ModeManager:
             if (not is_moving
                     and self._state.get_goal_cell() is None
                     and now - self._last_auto_time >= AUTO_INTERVAL_SEC):
-                goal = self._pick_random_goal(current_cell)
+                goal = self.pick_random_goal(current_cell)
                 if goal is not None:
                     self._state.set_goal_cell(goal)
                     self._state.set_enemy_goal(False)
                 self._last_auto_time = now
 
-    def _pick_random_goal(self, start_cell: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+    def pick_random_goal(self, start_cell: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         m = self._map
         for _ in range(80):
             gx = random.randint(0, m.width - 1)

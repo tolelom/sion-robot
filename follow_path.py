@@ -85,11 +85,40 @@ class PoseEstimator:
 
 
 # ==========================
-# 경로 따라가기 (상수 속도, 실시간 pose 갱신)
+# 적 목표 도달 시 서보 액션
 # ==========================
 
+def _execute_enemy_action(omega_turn_norm: float, scale_omega_rad: float, run_for_duration) -> None:
+    """적 목표 도달 시 서보 액션 실행: 160도 회전 + 팔 동작"""
+    TTLServo.servoAngleCtrl(2, 0, 1, 100)
+    TTLServo.servoAngleCtrl(3, 90, 1, 180)
 
-    
+    turn_dir = 1.0
+    omega_real = omega_turn_norm * scale_omega_rad
+    turn_time = abs(math.radians(160.0)) / max(omega_real, 1e-6)
+
+    run_for_duration(
+        v_norm=0.0,
+        omega_norm=turn_dir * omega_turn_norm,
+        v_mps=0.0,
+        omega_rad=turn_dir * omega_real,
+        duration=turn_time,
+    )
+
+    TTLServo.servoAngleCtrl(2, -100, 1, 1000)
+    TTLServo.servoAngleCtrl(3, 120, 1, 1000)
+    sleep(2)
+    TTLServo.servoAngleCtrl(1, 0, 1, 180)
+    TTLServo.servoAngleCtrl(2, -80, 1, 180)
+    TTLServo.servoAngleCtrl(3, -60, 1, 180)
+    TTLServo.servoAngleCtrl(4, -35, 1, 180)
+    sleep(2)
+    logger.info("enemy action complete")
+
+
+# ==========================
+# 경로 따라가기 (상수 속도, 실시간 pose 갱신)
+# ==========================
 
 def follow_path_constant_speed(
     waypoints_world: List[Tuple[float, float]],
@@ -231,27 +260,7 @@ def follow_path_constant_speed(
             time.sleep(0.05)
             
             if is_enemy_goal and i == num_segments - 1:
-                TTLServo.servoAngleCtrl(2, 0, 1, 100)
-                TTLServo.servoAngleCtrl(3, 90, 1, 180)
-                turn_dir = 1.0
-                omega_real = omega_turn_norm * scale_omega_rad      # rad/s
-                turn_time = abs(math.radians(160.0)) / max(omega_real, 1e-6)
-                run_for_duration(
-                    v_norm=0.0,
-                    omega_norm=turn_dir * omega_turn_norm,
-                    v_mps=0.0,
-                    omega_rad=turn_dir * omega_real,
-                    duration=turn_time,
-                )
-                TTLServo.servoAngleCtrl(2, -100, 1, 1000)
-                TTLServo.servoAngleCtrl(3, 120, 1, 1000)
-                sleep(2)
-                TTLServo.servoAngleCtrl(1, 0, 1, 180)
-                TTLServo.servoAngleCtrl(2, -80, 1, 180)
-                TTLServo.servoAngleCtrl(3, -60, 1, 180)
-                TTLServo.servoAngleCtrl(4, -35, 1, 180)
-                sleep(2)
-                logger.info("ready")
+                _execute_enemy_action(omega_turn_norm, scale_omega_rad, run_for_duration)
 
     finally:
         robot.stop()

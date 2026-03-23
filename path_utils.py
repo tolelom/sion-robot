@@ -120,12 +120,9 @@ def inflate_map(m: MapData, radius_cells: int) -> MapData:
                     for xx in range(max(0, x - radius_cells), min(W, x + radius_cells + 1)):
                         new_grid[yy][xx] = CellType.WALL
 
-    # ENEMY 위치는 벽 위에 있지 않도록 보정
+    # ENEMY 위치는 벽 위에 있더라도 ENEMY로 설정
     for (ex, ey) in m.enemies:
-        if new_grid[ey][ex] == CellType.WALL:
-            new_grid[ey][ex] = CellType.ENEMY
-        else:
-            new_grid[ey][ex] = CellType.ENEMY
+        new_grid[ey][ex] = CellType.ENEMY
 
     # START 위치도 확보
     if m.start is not None:
