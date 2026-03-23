@@ -127,7 +127,7 @@ class AGVWebSocketClient:
         }
 
         self._send_message("position", data)
-        print(f"위치 전송: x={x:2f}, y={y:2f}, angle={angle:2f}")
+        print(f"위치 전송: x={x:.2f}, y={y:.2f}, angle={angle:.2f}")
 
     def send_status(self, status: dict):
         agv_status = {

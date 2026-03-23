@@ -5,14 +5,12 @@ import random
 import time
 from typing import Optional, Tuple
 
+from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS
 from plan_test import plan_path_for_goal
 from state import AGVState
 
 
 class ModeManager:
-    AUTO_INTERVAL_SEC = 5.0
-    INFLATE_RADIUS = 2
-    MIN_CHARGE_CELLS = 8
 
     def __init__(self, state: AGVState, m):
         self._state = state
@@ -48,7 +46,7 @@ class ModeManager:
             now = time.time()
             if (not is_moving
                     and self._state.get_goal_cell() is None
-                    and now - self._last_auto_time >= self.AUTO_INTERVAL_SEC):
+                    and now - self._last_auto_time >= AUTO_INTERVAL_SEC):
                 goal = self._pick_random_goal(current_cell)
                 if goal is not None:
                     self._state.set_goal_cell(goal)
@@ -66,8 +64,8 @@ class ModeManager:
             path_cells, _ = plan_path_for_goal(
                 m, start_cell=start_cell, goal_cell=goal,
                 is_enemy_goal=False,
-                inflate_radius=self.INFLATE_RADIUS,
-                min_charge_cells=self.MIN_CHARGE_CELLS,
+                inflate_radius=INFLATE_RADIUS,
+                min_charge_cells=MIN_CHARGE_CELLS,
             )
             if path_cells is not None:
                 return goal

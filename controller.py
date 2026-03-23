@@ -14,23 +14,11 @@ import cv2
 
 from follow_path import follow_path_constant_speed
 from map_loader import Map, cell_to_world, load_map, world_to_cell
+from config import (MAP_FILE, POSE_PERIOD_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS,
+                     V_CRUISE, V_CHARGE, OMEGA_TURN, SCALE_V_MPS, SCALE_OMEGA_RAD)
 from mode_manager import ModeManager
 from plan_test import plan_path_for_goal
 from state import AGVState
-
-# =========================
-# CONFIG
-# =========================
-
-MAP_FILE = "map_smallroom_60x60.json"
-POSE_PERIOD_SEC = 0.5
-INFLATE_RADIUS = 2
-MIN_CHARGE_CELLS = 8
-V_CRUISE = 0.35
-V_CHARGE = 0.8
-OMEGA_TURN = 0.5
-SCALE_V_MPS = 0.15
-SCALE_OMEGA_RAD = 0.85
 
 
 # =========================

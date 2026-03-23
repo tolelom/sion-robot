@@ -268,7 +268,7 @@ def follow_path_constant_speed(
                 TTLServo.servoAngleCtrl(3, 90, 1, 180)
                 turn_dir = 1.0
                 omega_real = omega_turn_norm * scale_omega_rad      # rad/s
-                turn_time = abs(math.radian(160.0)) / max(omega_real, 1e-6)
+                turn_time = abs(math.radians(160.0)) / max(omega_real, 1e-6)
                 run_for_duration(
                     v_norm=0.0,
                     omega_norm=turn_dir * omega_turn_norm,
