@@ -55,7 +55,7 @@ SERVO_INIT_ANGLES = {1: 0, 2: -80, 3: -60, 4: -35}
 # 적 공격 시퀀스 — 코드로 유지 (단순 리스트로 추상화하기엔 로직이 복잡)
 # config에는 개별 숫자 상수만 추출:
 SERVO_ATTACK_TURN_DEG = 160
-SERVO_ATTACK_PREP = {2: 0, 3: 90}           # 공격 준비 자세
+SERVO_ATTACK_PREP = {2: (0, 100), 3: (90, 180)}  # {servo_id: (angle, time)} — 서보별 time 다름
 SERVO_ATTACK_HIT = {2: -100, 3: 120}        # 타격 자세 (speed=1, time=1000)
 SERVO_ATTACK_HIT_TIME = 1000
 SERVO_ATTACK_PAUSE_SEC = 2.0                # 타격 후 대기
