@@ -6,7 +6,7 @@ import time
 from typing import Optional, Tuple
 
 from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS
-from plan_test import plan_path_for_goal
+from path_planner import plan_path_for_goal
 from state import AGVState
 
 
