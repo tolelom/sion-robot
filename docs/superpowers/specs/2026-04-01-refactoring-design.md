@@ -47,16 +47,18 @@ K_OMEGA = 0.7
 STEP_SEC = 0.02
 
 # --- Servo ---
+# servoAngleCtrl(servo_id, angle, speed, time) — speed/time은 서보 라이브러리 파라미터
+SERVO_SPEED = 1
+SERVO_TIME = 180
 SERVO_INIT_ANGLES = {1: 0, 2: -80, 3: -60, 4: -35}
-SERVO_ATTACK_TURN_ANGLE = 160
-SERVO_ATTACK_SEQUENCE = [
-    # (servo_id, angle, delay_sec)
-    (1, 160, 0.3),
-    (3, 30, 0.2),
-    (4, 0, 0.2),
-    (3, -60, 0.2),
-    (4, -35, 0.2),
-]
+
+# 적 공격 시퀀스 — 코드로 유지 (단순 리스트로 추상화하기엔 로직이 복잡)
+# config에는 개별 숫자 상수만 추출:
+SERVO_ATTACK_TURN_DEG = 160
+SERVO_ATTACK_PREP = {2: 0, 3: 90}           # 공격 준비 자세
+SERVO_ATTACK_HIT = {2: -100, 3: 120}        # 타격 자세 (speed=1, time=1000)
+SERVO_ATTACK_HIT_TIME = 1000
+SERVO_ATTACK_PAUSE_SEC = 2.0                # 타격 후 대기
 
 # --- Planning ---
 MIN_CHARGE_CELLS = 8
@@ -64,6 +66,7 @@ MIN_CHARGE_CELLS = 8
 # --- Timing ---
 POSE_PERIOD_SEC = 0.5
 AUTO_INTERVAL_SEC = 5.0
+SEGMENT_PAUSE_SEC = 0.05
 ```
 
 각 모듈에서 `from config import INFLATE_RADIUS, ...` 으로 참조.
@@ -99,13 +102,14 @@ hardware.py
 ```python
 class RobotBase(ABC):
     @abstractmethod
-    def move(self, speed: float, turn_speed: float) -> None: ...
+    def set_velocity(self, v_norm: float, omega_norm: float) -> None: ...
 
     @abstractmethod
     def stop(self) -> None: ...
 
     @abstractmethod
-    def set_servo(self, servo_id: int, angle: int) -> None: ...
+    def set_servo(self, servo_id: int, angle: int,
+                  speed: int = 1, time: int = 180) -> None: ...
 ```
 
 **JetankRobot:** 기존 `follow_path.py`의 `JetankRobot` 클래스 로직을 이동. `_velocity_to_motors()` 내부 메서드 포함.
@@ -157,13 +161,15 @@ class RobotBase(ABC):
   - `0.02` → `config.STEP_SEC`
   - `0.7` → `config.K_OMEGA`
   - 서보 각도 → `config.SERVO_*`
-- `from time import sleep` 중복 import 정리 (`time.sleep()` 사용하므로 제거)
+- `from time import sleep` → `time.sleep()`으로 통일 (기존 `sleep(2)` 호출도 `time.sleep(2)`로 변경)
+- 세그먼트 간 pause `0.05` → `config.SEGMENT_PAUSE_SEC`
 
 ### controller.py
 
 - `hardware.create_robot()` 으로 robot 생성
 - robot 인스턴스를 `follow_path_constant_speed()`에 전달
 - `from plan_test import ...` → `from path_planner import ...`
+- 하드코딩된 `step_sec=0.02` → `config.STEP_SEC` 참조
 
 ### mode_manager.py
 
