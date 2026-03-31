@@ -7,7 +7,7 @@ from typing import List, Tuple
 from map_loader import load_map, cell_to_world
 from path_planner import plan_path_for_goal
 from path_utils import bresenham_line
-from config import INFLATE_RADIUS, MIN_CHARGE_CELLS
+from config import INFLATE_RADIUS, MIN_CHARGE_CELLS, MAP_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def main():
         format="%(message)s",
     )
 
-    m_orig = load_map("map_smallroom_60x60.json")
+    m_orig = load_map(MAP_FILE)
     if m_orig.start is None:
         raise RuntimeError("Start(S) not found in map")
 
@@ -75,7 +75,7 @@ def main():
     logger.info("Used enemy mode: %s", used_enemy_mode)
     logger.info("Final path length (cells): %d", len(path))
 
-    with open("map_smallroom_60x60.json", "r") as f:
+    with open(MAP_FILE, "r") as f:
         raw = json.load(f)
         cells = raw["cells"]
 

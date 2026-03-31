@@ -5,6 +5,7 @@ from typing import List, Tuple, Optional, Callable
 
 from hardware import RobotBase
 from config import (
+    V_CRUISE, V_CHARGE, OMEGA_TURN, SCALE_V_MPS, SCALE_OMEGA_RAD,
     STEP_SEC, SEGMENT_PAUSE_SEC,
     SERVO_SPEED, SERVO_TIME, SERVO_INIT_ANGLES,
     SERVO_ATTACK_TURN_DEG, SERVO_ATTACK_PREP,
@@ -75,11 +76,11 @@ def follow_path_constant_speed(
     robot: RobotBase,
     waypoints_world: List[Tuple[float, float]],
     is_enemy_goal: bool,
-    v_cruise_norm: float = 0.35,
-    v_charge_norm: float = 0.8,
-    omega_turn_norm: float = 0.5,
-    scale_v_mps: float = 0.15,
-    scale_omega_rad: float = 0.85,
+    v_cruise_norm: float = V_CRUISE,
+    v_charge_norm: float = V_CHARGE,
+    omega_turn_norm: float = OMEGA_TURN,
+    scale_v_mps: float = SCALE_V_MPS,
+    scale_omega_rad: float = SCALE_OMEGA_RAD,
     pose_update_cb: Optional[Callable[[float, float, float], None]] = None,
     step_sec: float = STEP_SEC,
 ) -> Tuple[float, float, float]:

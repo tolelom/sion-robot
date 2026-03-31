@@ -18,7 +18,8 @@ import cv2
 from follow_path import follow_path_constant_speed
 from map_loader import MapData, cell_to_world, load_map, world_to_cell
 from config import (MAP_FILE, POSE_PERIOD_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS,
-                     V_CRUISE, V_CHARGE, OMEGA_TURN, SCALE_V_MPS, SCALE_OMEGA_RAD, STEP_SEC)
+                     V_CRUISE, V_CHARGE, OMEGA_TURN, SCALE_V_MPS, SCALE_OMEGA_RAD,
+                     STEP_SEC, CAMERA_POLL_SEC)
 from hardware import create_robot, RobotBase
 from mode_manager import ModeManager
 from path_planner import plan_path_for_goal
@@ -49,7 +50,7 @@ def camera_thread_main(stop_event: threading.Event) -> None:
                 cap.release()
                 cap = None
                 continue
-            time.sleep(0.02)
+            time.sleep(CAMERA_POLL_SEC)
         except Exception as e:
             logger.error("camera exception: %s", e)
             if cap is not None:

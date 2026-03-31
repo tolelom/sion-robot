@@ -5,6 +5,7 @@ from typing import List, Tuple, Optional
 from map_loader import MapData
 from astar import astar_normal, astar_enemy
 from path_utils import smooth_path_cells, inflate_map, attach_charge_segment
+from config import INFLATE_RADIUS, MIN_CHARGE_CELLS
 
 
 def plan_path_for_goal(
@@ -12,8 +13,8 @@ def plan_path_for_goal(
     start_cell: Tuple[int, int],
     goal_cell: Tuple[int, int],
     is_enemy_goal: bool,
-    inflate_radius: int = 2,
-    min_charge_cells: int = 8,
+    inflate_radius: int = INFLATE_RADIUS,
+    min_charge_cells: int = MIN_CHARGE_CELLS,
 ) -> Tuple[Optional[List[Tuple[int, int]]], bool]:
     m = inflate_map(m_orig, radius_cells=inflate_radius)
     use_enemy_mode = is_enemy_goal
