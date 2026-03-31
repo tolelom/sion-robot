@@ -1,67 +1,17 @@
 import logging
 import math
 import time
-from time import sleep
 from typing import List, Tuple, Optional, Callable
-from SCSCtrl import TTLServo
+
+from hardware import RobotBase
+from config import (
+    STEP_SEC, SEGMENT_PAUSE_SEC,
+    SERVO_SPEED, SERVO_TIME, SERVO_INIT_ANGLES,
+    SERVO_ATTACK_TURN_DEG, SERVO_ATTACK_PREP,
+    SERVO_ATTACK_HIT, SERVO_ATTACK_HIT_TIME, SERVO_ATTACK_PAUSE_SEC,
+)
 
 logger = logging.getLogger(__name__)
-
-try:
-    from jetbot import Robot  # JETANK 기본 제어
-    
-except ImportError:
-    Robot = None  # PC 테스트용
-
-
-# ==========================
-# JETANK 모터 제어 래퍼
-# ==========================
-
-class JetankRobot:
-    """
-    v_norm   : -1.0 ~ 1.0
-    omega_norm: -1.0 ~ 1.0  ( + : CCW )
-    내부: set_motors(left, right) "포지셔널"로만 호출 (키워드 금지)
-    """
-
-    def __init__(self):
-        if Robot is None:
-            logger.warning("jetbot.Robot not found. Motor control disabled (dry-run).")
-            self.robot = None
-        else:
-            self.robot = Robot()
-            TTLServo.servoAngleCtrl(1, 0, 1, 180)
-            TTLServo.servoAngleCtrl(2, -80, 1, 180)
-            TTLServo.servoAngleCtrl(3, -60, 1, 180)
-            TTLServo.servoAngleCtrl(4, -35, 1, 180)
-            logger.info("ready")
-            
-
-    def _set_motors_safe(self, left: float, right: float):
-        left = float(max(-1.0, min(1.0, left)))
-        right = float(max(-1.0, min(1.0, right)))
-
-        if self.robot is None:
-            logger.debug("(dry-run) left=%.2f, right=%.2f", left, right)
-            return
-
-        # ✅ 포지셔널만 사용 (키워드 사용 금지!)
-        self.robot.set_motors(left, right)
-
-    def set_velocity(self, v_norm: float, omega_norm: float):
-        v_norm = max(-1.0, min(1.0, v_norm))
-        omega_norm = max(-1.0, min(1.0, omega_norm))
-
-        # 차동구동 (너가 기존에 쓰던 감으로 k_omega 유지)
-        k_omega = 0.7
-        left = v_norm - k_omega * omega_norm
-        right = v_norm + k_omega * omega_norm
-
-        self._set_motors_safe(left, right)
-
-    def stop(self):
-        self._set_motors_safe(0.0, 0.0)
 
 
 # ==========================
@@ -88,14 +38,15 @@ class PoseEstimator:
 # 적 목표 도달 시 서보 액션
 # ==========================
 
-def _execute_enemy_action(omega_turn_norm: float, scale_omega_rad: float, run_for_duration) -> None:
+def _execute_enemy_action(robot: RobotBase, omega_turn_norm: float,
+                          scale_omega_rad: float, run_for_duration) -> None:
     """적 목표 도달 시 서보 액션 실행: 160도 회전 + 팔 동작"""
-    TTLServo.servoAngleCtrl(2, 0, 1, 100)
-    TTLServo.servoAngleCtrl(3, 90, 1, 180)
+    for sid, (angle, t) in SERVO_ATTACK_PREP.items():
+        robot.set_servo(sid, angle, SERVO_SPEED, t)
 
     turn_dir = 1.0
     omega_real = omega_turn_norm * scale_omega_rad
-    turn_time = abs(math.radians(160.0)) / max(omega_real, 1e-6)
+    turn_time = abs(math.radians(SERVO_ATTACK_TURN_DEG)) / max(omega_real, 1e-6)
 
     run_for_duration(
         v_norm=0.0,
@@ -105,14 +56,14 @@ def _execute_enemy_action(omega_turn_norm: float, scale_omega_rad: float, run_fo
         duration=turn_time,
     )
 
-    TTLServo.servoAngleCtrl(2, -100, 1, 1000)
-    TTLServo.servoAngleCtrl(3, 120, 1, 1000)
-    sleep(2)
-    TTLServo.servoAngleCtrl(1, 0, 1, 180)
-    TTLServo.servoAngleCtrl(2, -80, 1, 180)
-    TTLServo.servoAngleCtrl(3, -60, 1, 180)
-    TTLServo.servoAngleCtrl(4, -35, 1, 180)
-    sleep(2)
+    for sid, angle in SERVO_ATTACK_HIT.items():
+        robot.set_servo(sid, angle, SERVO_SPEED, SERVO_ATTACK_HIT_TIME)
+    time.sleep(SERVO_ATTACK_PAUSE_SEC)
+
+    for sid, angle in SERVO_INIT_ANGLES.items():
+        robot.set_servo(sid, angle, SERVO_SPEED, SERVO_TIME)
+    time.sleep(SERVO_ATTACK_PAUSE_SEC)
+
     logger.info("enemy action complete")
 
 
@@ -121,6 +72,7 @@ def _execute_enemy_action(omega_turn_norm: float, scale_omega_rad: float, run_fo
 # ==========================
 
 def follow_path_constant_speed(
+    robot: RobotBase,
     waypoints_world: List[Tuple[float, float]],
     is_enemy_goal: bool,
     v_cruise_norm: float = 0.35,
@@ -129,7 +81,7 @@ def follow_path_constant_speed(
     scale_v_mps: float = 0.15,
     scale_omega_rad: float = 0.85,
     pose_update_cb: Optional[Callable[[float, float, float], None]] = None,
-    step_sec: float = 0.02,   # ✅ 20ms 단위로 계속 갱신
+    step_sec: float = STEP_SEC,
 ) -> Tuple[float, float, float]:
     """
     - TURN / DRIVE 구간을 step_sec 단위로 쪼개서:
@@ -141,8 +93,6 @@ def follow_path_constant_speed(
         logger.warning("Waypoints too short")
         x0, y0 = waypoints_world[0] if waypoints_world else (0.0, 0.0)
         return (x0, y0, 0.0)
-
-    robot = JetankRobot()
 
     # 초기 pose를 첫 웨이포인트 중심으로 설정
     x0, y0 = waypoints_world[0]
@@ -257,10 +207,10 @@ def follow_path_constant_speed(
                 duration=drive_time,
             )
 
-            time.sleep(0.05)
-            
+            time.sleep(SEGMENT_PAUSE_SEC)
+
             if is_enemy_goal and i == num_segments - 1:
-                _execute_enemy_action(omega_turn_norm, scale_omega_rad, run_for_duration)
+                _execute_enemy_action(robot, omega_turn_norm, scale_omega_rad, run_for_duration)
 
     finally:
         robot.stop()
