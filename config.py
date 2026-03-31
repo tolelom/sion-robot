@@ -1,13 +1,13 @@
 # config.py — 공유 상수 중앙 관리
 
-# 경로 / 맵
+# --- Map ---
 MAP_FILE = "map_smallroom_60x60.json"
 
-# 경로 계획
+# --- Planning ---
 INFLATE_RADIUS = 2
 MIN_CHARGE_CELLS = 8
 
-# 모션
+# --- Motion ---
 V_CRUISE = 0.35
 V_CHARGE = 0.8
 OMEGA_TURN = 0.5
@@ -16,7 +16,7 @@ SCALE_OMEGA_RAD = 0.85
 K_OMEGA = 0.7
 STEP_SEC = 0.02
 
-# 서보
+# --- Servo ---
 SERVO_SPEED = 1
 SERVO_TIME = 180
 SERVO_INIT_ANGLES = {1: 0, 2: -80, 3: -60, 4: -35}
@@ -26,7 +26,7 @@ SERVO_ATTACK_HIT = {2: -100, 3: 120}
 SERVO_ATTACK_HIT_TIME = 1000
 SERVO_ATTACK_PAUSE_SEC = 2.0
 
-# 주기
+# --- Timing ---
 POSE_PERIOD_SEC = 0.5
 AUTO_INTERVAL_SEC = 5.0
 SEGMENT_PAUSE_SEC = 0.05
