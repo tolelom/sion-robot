@@ -56,15 +56,15 @@ def camera_thread_main(stop_event: threading.Event) -> None:
             if cap is not None:
                 try:
                     cap.release()
-                except Exception:
-                    pass
+                except Exception as release_err:
+                    logger.debug("cap.release() failed during exception recovery: %s", release_err)
             cap = None
             time.sleep(1.0)
     if cap is not None:
         try:
             cap.release()
-        except Exception:
-            pass
+        except Exception as release_err:
+            logger.debug("cap.release() failed during cleanup: %s", release_err)
     logger.info("camera thread stop")
 
 
@@ -136,7 +136,7 @@ def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
-        pass
+        logger.debug("stdout reconfigure not supported on this platform")
 
     logger.info("Loading map ...")
     m = load_map(MAP_FILE)
