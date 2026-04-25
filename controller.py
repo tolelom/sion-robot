@@ -31,7 +31,11 @@ from state import AGVState
 # =========================
 
 def camera_thread_main(stop_event: threading.Event) -> None:
-    """카메라 keep-alive 스레드. 실패해도 메인을 죽이지 않음."""
+    """카메라 keep-alive 스레드. 실패해도 메인을 죽이지 않음.
+
+    데몬 스레드라 어떤 예외든 무는 것이 옳지만, 종류별로 메시지 강도를 다르게 한다.
+    예상되는 실패(cv2.error / OSError)는 warning, 그 외는 traceback과 함께 error.
+    """
     logger.info("thread start")
     cap = None
     while not stop_event.is_set():
@@ -51,21 +55,27 @@ def camera_thread_main(stop_event: threading.Event) -> None:
                 cap = None
                 continue
             time.sleep(CAMERA_POLL_SEC)
-        except Exception as e:
-            logger.error("camera exception: %s", e)
-            if cap is not None:
-                try:
-                    cap.release()
-                except Exception as release_err:
-                    logger.debug("cap.release() failed during exception recovery: %s", release_err)
-            cap = None
+        except (cv2.error, OSError) as e:
+            logger.warning("camera I/O error: %s", e)
+            cap = _safe_release(cap)
             time.sleep(1.0)
-    if cap is not None:
-        try:
-            cap.release()
-        except Exception as release_err:
-            logger.debug("cap.release() failed during cleanup: %s", release_err)
+        except Exception:
+            logger.exception("camera unexpected exception")
+            cap = _safe_release(cap)
+            time.sleep(1.0)
+    _safe_release(cap)
     logger.info("camera thread stop")
+
+
+def _safe_release(cap) -> None:
+    """cv2 캡처 자원 해제. 실패해도 호출부를 깨지 않는다."""
+    if cap is None:
+        return None
+    try:
+        cap.release()
+    except Exception as release_err:
+        logger.debug("cap.release() failed: %s", release_err)
+    return None
 
 
 # =========================
@@ -79,10 +89,16 @@ def move_worker(
     goal_cell: Tuple[int, int],
     is_enemy_goal: bool,
     state: AGVState,
+    cancel_event: Optional[threading.Event] = None,
 ) -> None:
-    """경로 계획 → 웨이포인트 변환 → follow_path 실행"""
+    """경로 계획 → 웨이포인트 변환 → follow_path 실행.
+
+    plan / follow 단계를 분리해 어느 단계에서 실패했는지 로그로 식별 가능하게 한다.
+    cancel_event가 set되면 follow_path가 즉시 정지하고 반환한다.
+    """
+    state.set_plan_result(False)
+
     try:
-        state.set_plan_result(False)
         path_cells, _ = plan_path_for_goal(
             m,
             start_cell=start_cell,
@@ -91,20 +107,26 @@ def move_worker(
             inflate_radius=INFLATE_RADIUS,
             min_charge_cells=MIN_CHARGE_CELLS,
         )
-        if path_cells is None:
-            state.set_plan_result(False, "No path found")
-            logger.warning("No path found")
-            return
+    except Exception as e:
+        state.set_plan_result(False, f"plan exception: {e}")
+        logger.exception("move_worker: plan_path_for_goal failed")
+        return
 
-        for cx, cy in path_cells:
-            logger.debug("  cell (%2d,%2d)", cx, cy)
-        waypoints_world = [cell_to_world(x, y, m.resolution) for x, y in path_cells]
-        state.set_plan_result(True)
+    if path_cells is None:
+        state.set_plan_result(False, "No path found")
+        logger.warning("No path found")
+        return
 
-        def pose_cb(px: float, py: float, ptheta: float) -> None:
-            cx, cy = world_to_cell(px, py, m.resolution)
-            state.set_pose((px, py, ptheta), (cx, cy))
+    for cx, cy in path_cells:
+        logger.debug("  cell (%2d,%2d)", cx, cy)
+    waypoints_world = [cell_to_world(x, y, m.resolution) for x, y in path_cells]
+    state.set_plan_result(True)
 
+    def pose_cb(px: float, py: float, ptheta: float) -> None:
+        cx, cy = world_to_cell(px, py, m.resolution)
+        state.set_pose((px, py, ptheta), (cx, cy))
+
+    try:
         follow_path_constant_speed(
             robot=robot,
             waypoints_world=waypoints_world,
@@ -116,10 +138,11 @@ def move_worker(
             scale_omega_rad=SCALE_OMEGA_RAD,
             pose_update_cb=pose_cb,
             step_sec=STEP_SEC,
+            cancel_event=cancel_event,
         )
     except Exception as e:
-        state.set_plan_result(False, f"move_worker exception: {e}")
-        logger.error("move_worker exception: %s", e)
+        state.set_plan_result(False, f"follow exception: {e}")
+        logger.exception("move_worker: follow_path_constant_speed failed")
 
 
 # =========================
@@ -182,7 +205,7 @@ def main() -> None:
                 if consumed is not None:
                     move_th = threading.Thread(
                         target=move_worker,
-                        args=(robot, m, current_cell, consumed, is_enemy, state),
+                        args=(robot, m, current_cell, consumed, is_enemy, state, stop_event),
                         daemon=True,
                     )
                     move_th.start()
@@ -206,7 +229,17 @@ def main() -> None:
         logger.info("KeyboardInterrupt -> stopping")
     finally:
         stop_event.set()
-        time.sleep(0.2)
+        # 진행 중인 follow가 cancel_event(stop_event)에 반응해 모터 정지 + 반환할 시간을 준다.
+        # daemon thread라 join 없이도 프로세스 종료에 묶이지만, robot.stop() 보장을 위해 join.
+        if move_th is not None and move_th.is_alive():
+            move_th.join(timeout=2.0)
+            if move_th.is_alive():
+                logger.warning("move_th did not finish within 2s")
+        # 안전 차원에서 한 번 더 모터 정지 시도.
+        try:
+            robot.stop()
+        except Exception:
+            logger.exception("final robot.stop() failed")
         logger.info("Exit")
 
 

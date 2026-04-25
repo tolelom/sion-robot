@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -10,6 +11,15 @@ import websockets
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_BACKEND_WS_URL = "ws://localhost:3000/websocket/agv"
+
+
+def resolve_backend_ws_url(explicit: Optional[str] = None) -> str:
+    """server_url 결정: 명시 인자 > SION_BACKEND_WS_URL 환경변수 > localhost 기본값."""
+    if explicit:
+        return explicit
+    return os.environ.get("SION_BACKEND_WS_URL", DEFAULT_BACKEND_WS_URL)
 
 """
 AGV WebSocket 클라이언트
@@ -22,8 +32,8 @@ LLM 후순위
 
 
 class AGVWebSocketClient:
-    def __init__(self, server_url: str = "ws://tolelom.xyz:3000/websocket/agv"):
-        self.server_url = server_url
+    def __init__(self, server_url: Optional[str] = None):
+        self.server_url = resolve_backend_ws_url(server_url)
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.connected = False
         self.loop = None  # ?
@@ -62,9 +72,15 @@ class AGVWebSocketClient:
                 async for message in websocket:
                     await self._handle_message(message)
 
-        except Exception as e:
-            logger.error("Web Socket 연결 오류: %s", e)
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning("WebSocket 연결 종료: code=%s reason=%s", e.code, e.reason)
+        except (websockets.exceptions.WebSocketException, OSError) as e:
+            logger.warning("WebSocket 네트워크 오류: %s", e)
+        except Exception:
+            logger.exception("WebSocket 예기치 못한 오류")
+        finally:
             self.connected = False
+            self.websocket = None
 
     # 서버에서 받은 메시지 처리 함수
     async def _handle_message(self, message: str):
@@ -98,7 +114,7 @@ class AGVWebSocketClient:
                 await self.execute_emergency_stop(reason)
 
         except json.JSONDecodeError as e:
-            logger.error("Json 파싱 오류: %s", e)
+            logger.error("JSON 파싱 오류: %s", e)
 
     # 메시지 전송 함수 (동기 함수에서 호출 가능)
     def _send_message(self, msg_type: str, data: Dict[Any, Any]):

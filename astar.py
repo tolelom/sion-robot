@@ -1,17 +1,26 @@
 """
-A* 경로 탐색 구현.
+A* 경로 탐색 구현 (로봇 측, Python).
 
-인터페이스 규약 (Go, JS 구현과 동일하게 유지할 것):
-  입력: grid (0=통과가능, 1=장애물), start {x,y}, goal {x,y}
-  출력: path [{x,y}] — 빈 리스트면 경로 없음
+이 모듈은 로봇이 직접 사용하는 경로 계획기다.
+- astar_normal: 8방향 최단 경로 (유클리드 휴리스틱)
+- astar_enemy : 같은 길이 중 회전 횟수가 적은 경로 우선 (적 추적용)
+- plan_path   : 목표 셀이 ENEMY면 astar_enemy, 그 외엔 astar_normal
 
 경계 조건:
   - start == goal → [start] 반환
-  - goal이 장애물 → 빈 리스트 반환
-  - 경로 없음 → 빈 리스트 반환
+  - goal이 장애물 → None 반환
+  - 경로 없음 → None 반환
 
-주의: 이 알고리즘은 Go(algorithms/astar.go)와 JS(hooks/usePathfinding.js)에도 동일하게 구현됨.
-      변경 시 세 곳 모두 동일하게 유지할 것.
+관련 구현 (의도적으로 분리되어 있음):
+  - sion-backend/algorithms/astar.go
+      웹 시뮬레이터/대시보드용 (POST /api/pathfinding). 일반 A*만 제공한다.
+      웹 API는 셀 타입(ENEMY/OBSTACLE 등)을 전달하지 않으므로 회전 최소화 변형을
+      이식할 필요가 없다. 휴리스틱·이동 비용은 본 모듈과 동일하게 유지한다.
+  - sion-frontend
+      자체 A*를 구현하지 않고 백엔드 API에 위임한다.
+
+본 모듈의 알고리즘(휴리스틱, 8방향 비용)을 바꿀 때는 sion-backend의
+일반 A*와 결과가 일치하도록 같이 손볼 것.
 """
 import heapq
 import math

@@ -7,7 +7,7 @@ from typing import Optional, Any, Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
-from tolelom.web_socket_client import AGVWebSocketClient
+from tolelom.web_socket_client import AGVWebSocketClient, resolve_backend_ws_url
 
 ws_client: Optional[AGVWebSocketClient] = None
 
@@ -15,9 +15,9 @@ ws_client: Optional[AGVWebSocketClient] = None
 outbox: "queue.Queue[Tuple[str, Dict[str, Any]]]" = queue.Queue()
 
 
-def init_websocket_client(server_url: str = "ws://tolelom.xyz:3000/websocket/agv"):
+def init_websocket_client(server_url: Optional[str] = None):
     global ws_client
-    ws_client = AGVWebSocketClient(server_url)
+    ws_client = AGVWebSocketClient(resolve_backend_ws_url(server_url))
     ws_client.start()
     return ws_client
 
@@ -118,7 +118,7 @@ def send_loop(stop_evt: threading.Event,
 
 
 if __name__ == "__main__":
-    client = init_websocket_client("ws://tolelom.xyz:3000/websocket/agv")
+    client = init_websocket_client()
 
     stop_evt = threading.Event()
     th = threading.Thread(target=send_loop, args=(stop_evt,), daemon=True)

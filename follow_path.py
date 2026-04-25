@@ -1,5 +1,6 @@
 import logging
 import math
+import threading
 import time
 from typing import List, Tuple, Optional, Callable
 
@@ -39,23 +40,29 @@ class PoseEstimator:
 # 적 목표 도달 시 서보 액션
 # ==========================
 
+_ENEMY_ATTACK_TURN_DIR = 1.0  # 적 액션 회전 방향: 항상 양(반시계). 하드웨어 배치 가정.
+
+
 def _execute_enemy_action(robot: RobotBase, omega_turn_norm: float,
-                          scale_omega_rad: float, run_for_duration) -> None:
+                          scale_omega_rad: float, run_for_duration,
+                          is_cancelled: Callable[[], bool]) -> None:
     """적 목표 도달 시 서보 액션 실행: 160도 회전 + 팔 동작"""
     for sid, (angle, t) in SERVO_ATTACK_PREP.items():
         robot.set_servo(sid, angle, SERVO_SPEED, t)
 
-    turn_dir = 1.0
     omega_real = omega_turn_norm * scale_omega_rad
     turn_time = abs(math.radians(SERVO_ATTACK_TURN_DEG)) / max(omega_real, 1e-6)
 
     run_for_duration(
         v_norm=0.0,
-        omega_norm=turn_dir * omega_turn_norm,
+        omega_norm=_ENEMY_ATTACK_TURN_DIR * omega_turn_norm,
         v_mps=0.0,
-        omega_rad=turn_dir * omega_real,
+        omega_rad=_ENEMY_ATTACK_TURN_DIR * omega_real,
         duration=turn_time,
     )
+    if is_cancelled():
+        logger.info("enemy action cancelled before HIT")
+        return
 
     for sid, angle in SERVO_ATTACK_HIT.items():
         robot.set_servo(sid, angle, SERVO_SPEED, SERVO_ATTACK_HIT_TIME)
@@ -83,13 +90,21 @@ def follow_path_constant_speed(
     scale_omega_rad: float = SCALE_OMEGA_RAD,
     pose_update_cb: Optional[Callable[[float, float, float], None]] = None,
     step_sec: float = STEP_SEC,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Tuple[float, float, float]:
     """
     - TURN / DRIVE 구간을 step_sec 단위로 쪼개서:
       * 모터 명령 유지
       * pose_est.update(...) 지속 호출
       * pose_update_cb(...) 지속 호출
+    - cancel_event가 set되면 가능한 한 빠르게 정지하고 반환한다.
+      finally의 robot.stop()이 모터 정지를 보장한다.
     """
+    if scale_v_mps <= 0 or scale_omega_rad <= 0 or step_sec <= 0:
+        raise ValueError(
+            f"invalid params: scale_v_mps={scale_v_mps}, scale_omega_rad={scale_omega_rad}, step_sec={step_sec}"
+        )
+
     if len(waypoints_world) < 2:
         logger.warning("Waypoints too short")
         x0, y0 = waypoints_world[0] if waypoints_world else (0.0, 0.0)
@@ -100,8 +115,19 @@ def follow_path_constant_speed(
     pose_est = PoseEstimator(x0, y0, theta0=0.0)
     theta_est = 0.0
 
-    if pose_update_cb:
-        pose_update_cb(*pose_est.get_pose())
+    def safe_cb() -> None:
+        # pose_update_cb는 외부 입력. 거기서 던진 예외가 모터 정지 흐름까지 깨지 않게 격리.
+        if pose_update_cb is None:
+            return
+        try:
+            pose_update_cb(*pose_est.get_pose())
+        except Exception:
+            logger.exception("pose_update_cb raised")
+
+    def is_cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    safe_cb()
 
     num_segments = len(waypoints_world) - 1
 
@@ -109,47 +135,53 @@ def follow_path_constant_speed(
         """
         duration 동안 step_sec 간격으로:
         - 모터 명령 유지
-        - pose 적분
+        - pose 적분 (첫 step 동안은 명령 전파 지연을 인정해 적분하지 않음)
         - 콜백 호출
         """
-        t_end = time.monotonic() + duration
-        last_t = time.monotonic()
-
-        # 모터 명령 시작
         robot.set_velocity(v_norm, omega_norm)
+        start = time.monotonic()
+        last_t = start
+        t_end = start + duration
 
         while True:
+            if is_cancelled():
+                break
             now = time.monotonic()
             if now >= t_end:
                 break
 
             dt = now - last_t
             last_t = now
-            if dt <= 0:
-                time.sleep(step_sec)
-                continue
+            if dt > 0:
+                pose_est.update(v_mps, omega_rad, dt)
+                safe_cb()
+            # dt == 0인 첫 iteration은 pose update를 건너뛰고 step_sec 슬립으로 진입.
 
-            pose_est.update(v_mps, omega_rad, dt)
-            if pose_update_cb:
-                pose_update_cb(*pose_est.get_pose())
-
-            # 일정 주기 유지
             sleep_t = max(0.0, step_sec - (time.monotonic() - now))
             if sleep_t > 0:
-                time.sleep(sleep_t)
+                # cancel 응답성을 위해 sleep도 cancel_event.wait로 대체 가능하지만,
+                # cancel_event가 None인 일반 경로에선 time.sleep이 단순. wait를 쓰면 ms 정확도가 떨어질 수 있어 분기 유지.
+                if cancel_event is not None:
+                    if cancel_event.wait(timeout=sleep_t):
+                        break
+                else:
+                    time.sleep(sleep_t)
 
-        # 마지막 잔여시간 보정(끝 경계까지)
-        now2 = time.monotonic()
-        if now2 < t_end:
-            dt = t_end - now2
-            pose_est.update(v_mps, omega_rad, dt)
-            if pose_update_cb:
-                pose_update_cb(*pose_est.get_pose())
+        # 마지막 잔여시간 보정(끝 경계까지). cancel로 빠진 경우엔 보정하지 않는다 — 곧 모터가 정지.
+        if not is_cancelled():
+            now2 = time.monotonic()
+            if now2 < t_end:
+                dt = t_end - now2
+                pose_est.update(v_mps, omega_rad, dt)
+                safe_cb()
 
         robot.stop()
 
     try:
         for i in range(num_segments):
+            if is_cancelled():
+                logger.info("follow cancelled at segment %d", i)
+                break
             sx, sy = waypoints_world[i]
             ex, ey = waypoints_world[i + 1]
 
@@ -210,8 +242,8 @@ def follow_path_constant_speed(
 
             time.sleep(SEGMENT_PAUSE_SEC)
 
-            if is_enemy_goal and i == num_segments - 1:
-                _execute_enemy_action(robot, omega_turn_norm, scale_omega_rad, run_for_duration)
+            if is_enemy_goal and i == num_segments - 1 and not is_cancelled():
+                _execute_enemy_action(robot, omega_turn_norm, scale_omega_rad, run_for_duration, is_cancelled)
 
     finally:
         robot.stop()

@@ -73,26 +73,32 @@ class ModeManager:
 
     def _parse_goal(self, cmd: dict):
         from map_loader import world_to_cell
+
+        is_enemy = bool(cmd.get("is_enemy_goal", False))
+        goal = cmd.get("goal")
+        if not isinstance(goal, dict):
+            return None, is_enemy, "no goal in command" if goal is None else "goal must be a dict"
+
+        gtype = goal.get("type", "cell")
+        gx_raw = goal.get("x")
+        gy_raw = goal.get("y")
+        if gx_raw is None or gy_raw is None:
+            return None, is_enemy, "goal.x / goal.y missing"
+
+        m = self._map
         try:
-            is_enemy = bool(cmd.get("is_enemy_goal", False))
-            goal = cmd.get("goal")
-            if goal is None:
-                return None, is_enemy, "no goal in command"
-            gtype = goal.get("type", "cell")
             if gtype == "cell":
-                gx, gy = int(goal["x"]), int(goal["y"])
-                m = self._map
+                gx, gy = int(gx_raw), int(gy_raw)
                 if not (0 <= gx < m.width and 0 <= gy < m.height):
                     return None, is_enemy, "goal cell out of map range"
                 return (gx, gy), is_enemy, ""
             elif gtype == "world":
-                wx, wy = float(goal["x"]), float(goal["y"])
-                cx, cy = world_to_cell(wx, wy, self._map.resolution)
-                m = self._map
+                wx, wy = float(gx_raw), float(gy_raw)
+                cx, cy = world_to_cell(wx, wy, m.resolution)
                 if not (0 <= cx < m.width and 0 <= cy < m.height):
                     return None, is_enemy, "goal world->cell out of map range"
                 return (cx, cy), is_enemy, ""
             else:
                 return None, is_enemy, f"unknown goal.type={gtype}"
-        except Exception as e:
-            return None, False, f"parse error: {e}"
+        except (TypeError, ValueError) as e:
+            return None, is_enemy, f"goal coord parse error: {e}"
