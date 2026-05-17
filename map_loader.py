@@ -37,14 +37,17 @@ def load_map(path: str) -> MapData:
     res = data["resolution"]
     rows = data["cells"]
 
-    assert len(rows) == height, "height mismatch"
+    # assert는 python -O 실행 시 사라지므로 정상 경로 검증에는 적절하지 않다. raise로 항상 검증.
+    if len(rows) != height:
+        raise ValueError(f"height mismatch: declared={height}, actual={len(rows)}")
 
     grid: List[List[CellType]] = []
     start: Optional[Tuple[int, int]] = None
     enemies: List[Tuple[int, int]] = []
 
     for y, row_str in enumerate(rows):
-        assert len(row_str) == width, f"width mismatch on row {y}"
+        if len(row_str) != width:
+            raise ValueError(f"width mismatch on row {y}: declared={width}, actual={len(row_str)}")
         row: List[CellType] = []
         for x, ch in enumerate(row_str):
             if ch == "#":

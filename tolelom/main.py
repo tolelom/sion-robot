@@ -77,12 +77,23 @@ def send_loop(stop_evt: threading.Event,
     next_pos = time.monotonic()
     next_status = time.monotonic()
     next_path = time.monotonic()
+    was_connected = False
 
     while not stop_evt.is_set():
-        # 연결 안 되어 있으면 잠깐 쉬고 재시도(재연결 로직은 AGVWebSocketClient 정책에 맞춰 확장)
+        # 연결 안 되어 있으면 잠깐 쉬고 재시도(재연결 로직은 AGVWebSocketClient 정책에 맞춰 확장).
         if not ws_client or not ws_client.connected:
+            was_connected = False
             stop_evt.wait(0.2)
             continue
+
+        # 재연결 직후엔 schedule을 현재 시각으로 리셋한다. 연결 단절 동안 next_* < now가 누적되어
+        # 한 사이클에 position/status/path가 연속 발사되는 catch-up burst를 막는다.
+        if not was_connected:
+            base = time.monotonic()
+            next_pos = base
+            next_status = base
+            next_path = base
+            was_connected = True
 
         now = time.monotonic()
 

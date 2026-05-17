@@ -13,6 +13,8 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 DEFAULT_BACKEND_WS_URL = "ws://localhost:3000/websocket/agv"
+DEFAULT_START_TIMEOUT_SEC = 5.0
+DEFAULT_SEND_TIMEOUT_SEC = 1.0
 
 
 def resolve_backend_ws_url(explicit: Optional[str] = None) -> str:
@@ -21,23 +23,21 @@ def resolve_backend_ws_url(explicit: Optional[str] = None) -> str:
         return explicit
     return os.environ.get("SION_BACKEND_WS_URL", DEFAULT_BACKEND_WS_URL)
 
-"""
-AGV WebSocket 클라이언트
-
-LLM 후순위 
-지금 통신 -> 이동 -> 영상 찍는게 1순위
-통신 안되면 그냥 이동 -> 영상 
-
-"""
-
 
 class AGVWebSocketClient:
+    """AGV WebSocket 클라이언트.
+
+    - 연결 상태는 threading.Event(_connected_event)로 추적. plain bool은 멀티스레드에서 명시성이 떨어진다.
+    - start()는 timeout 안에 연결되지 않으면 False를 반환한다(이전엔 무한 busy wait였다).
+    - _send_message는 모든 예외를 잡아 로그만 남긴다. 한 호출 실패가 send_loop를 죽이지 않게.
+    """
+
     def __init__(self, server_url: Optional[str] = None):
         self.server_url = resolve_backend_ws_url(server_url)
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
-        self.connected = False
-        self.loop = None  # ?
-        self.receive_thread = None  # ?
+        self._connected_event = threading.Event()
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.receive_thread: Optional[threading.Thread] = None
 
         # AGV 상태 저장
         self.agv_id = "sion-001"
@@ -46,27 +46,37 @@ class AGVWebSocketClient:
         self.battery = 100
         self.speed = 0.0
 
-    def start(self):
-        # WebSocket 연결 시작 (별도 스레드에서 실행됨)
+    @property
+    def connected(self) -> bool:
+        return self._connected_event.is_set()
+
+    def start(self, timeout: float = DEFAULT_START_TIMEOUT_SEC) -> bool:
+        """별도 스레드에서 WebSocket 연결을 시작하고 timeout 안에 연결 완료를 대기.
+
+        Returns:
+            True: timeout 안에 연결 성공.
+            False: timeout 초과. 호출자가 폴백을 결정한다(메모: "통신 안되면 그냥 이동 -> 영상").
+        """
         self.receive_thread = threading.Thread(target=self._run_async_loop, daemon=True)
         self.receive_thread.start()
 
-        while not self.connected:
-            time.sleep(0.1)
-        logger.info("Web Socket 연결 완료: %s", self.server_url)
+        if not self._connected_event.wait(timeout=timeout):
+            logger.warning("Web Socket 연결 timeout(%ss): %s", timeout, self.server_url)
+            return False
 
-    # 비동기 이벤트 루프 실행
+        logger.info("Web Socket 연결 완료: %s", self.server_url)
+        return True
+
     def _run_async_loop(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._connect_and_listen())
 
-    # Web Socket 연결 및 메시지 수신
     async def _connect_and_listen(self):
         try:
             async with websockets.connect(self.server_url) as websocket:
                 self.websocket = websocket
-                self.connected = True
+                self._connected_event.set()
                 logger.info("Web Socket 연결 시도: %s", self.server_url)
 
                 async for message in websocket:
@@ -79,61 +89,66 @@ class AGVWebSocketClient:
         except Exception:
             logger.exception("WebSocket 예기치 못한 오류")
         finally:
-            self.connected = False
+            self._connected_event.clear()
             self.websocket = None
 
-    # 서버에서 받은 메시지 처리 함수
     async def _handle_message(self, message: str):
         try:
             data = json.loads(message)
-            msg_type = data.get("type")
-            msg_data = data.get("data")
-            logger.debug("서버 메시지 수신: %s", msg_type)
-
-            if msg_type == "command":
-                target_x = msg_data.get("target_x")
-                target_y = msg_data.get("target_y")
-                mode = msg_data.get("mode")
-                logger.info("이동 명령 도착: (%s, %s), 모드: %s", target_x, target_y, mode)
-
-                # TODO: 실제 이동 로직을 여기에 추가하세요
-                await self.execute_move_command(target_x, target_y, mode)
-
-            elif msg_type == "mode_change":
-                new_mode = msg_data.get("mode")
-                logger.info("모드 변경: %s", new_mode)
-
-                # TODO: 모드 변경 로직을 여기에 추가하세요
-                await self.change_mode(new_mode)
-
-            elif msg_type == "emergency_stop":
-                reason = msg_data.get("reason", "알 수 없음")  # 이 데이터가 백엔드에서 보내는 지 확인할 것
-                logger.info("긴급 정지: %s", reason)
-
-                # TODO: 긴급 정지 로직을 여기에 추가하세요
-                await self.execute_emergency_stop(reason)
-
         except json.JSONDecodeError as e:
             logger.error("JSON 파싱 오류: %s", e)
+            return
 
-    # 메시지 전송 함수 (동기 함수에서 호출 가능)
+        msg_type = data.get("type")
+        msg_data = data.get("data")
+        logger.debug("서버 메시지 수신: %s", msg_type)
+
+        # data 페이로드가 없거나 dict 형식이 아니면 명령으로 해석할 수 없다.
+        if not isinstance(msg_data, dict):
+            logger.warning("메시지 페이로드 형식 오류 (type=%s, data=%r)", msg_type, msg_data)
+            return
+
+        if msg_type == "command":
+            target_x = msg_data.get("target_x")
+            target_y = msg_data.get("target_y")
+            mode = msg_data.get("mode")
+            logger.info("이동 명령 도착: (%s, %s), 모드: %s", target_x, target_y, mode)
+            await self.execute_move_command(target_x, target_y, mode)
+
+        elif msg_type == "mode_change":
+            new_mode = msg_data.get("mode")
+            logger.info("모드 변경: %s", new_mode)
+            await self.change_mode(new_mode)
+
+        elif msg_type == "emergency_stop":
+            reason = msg_data.get("reason", "알 수 없음")
+            logger.info("긴급 정지: %s", reason)
+            await self.execute_emergency_stop(reason)
+
     def _send_message(self, msg_type: str, data: Dict[Any, Any]):
-        if not self.connected or not self.websocket:
+        """동기 호출자에서 asyncio loop으로 send를 위탁한다.
+
+        future.result()는 timeout/연결 종료/직렬화 등 다양한 사유로 raise할 수 있는데,
+        한 호출 실패가 send_loop 스레드를 죽이지 않게 모두 잡아 로그만 남긴다.
+        """
+        if not self.connected or not self.websocket or not self.loop:
             logger.warning("Web Socket이 연결되지 않았습니다.")
             return
 
         message = {
             "type": msg_type,
             "data": data,
-            "timestamp": int(time.time() * 1000)
+            "timestamp": int(time.time() * 1000),
         }
 
-        # 비동기 전송을 동기로 래핑?
-        future = asyncio.run_coroutine_threadsafe(
-            self.websocket.send(json.dumps(message)),
-            self.loop
-        )
-        future.result(timeout=1.0)
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.websocket.send(json.dumps(message)),
+                self.loop,
+            )
+            future.result(timeout=DEFAULT_SEND_TIMEOUT_SEC)
+        except Exception as e:
+            logger.warning("메시지 전송 실패 (type=%s): %s", msg_type, e)
 
     def send_position(self, x: float, y: float, angle: float):
         self.current_position = {"x": x, "y": y, "angle": angle}
@@ -142,7 +157,7 @@ class AGVWebSocketClient:
             "x": x,
             "y": y,
             "angle": angle,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         self._send_message("position", data)
@@ -158,7 +173,7 @@ class AGVWebSocketClient:
                 "x": self.current_position["x"],
                 "y": self.current_position["y"],
                 "angle": self.current_position["angle"],
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             },
             "mode": status.get("mode", "auto"),
             "state": self._convert_state(status),
@@ -168,32 +183,23 @@ class AGVWebSocketClient:
             "target_pos": self._convert_target_pos(status.get("target_cell")),
             "target_enemy": status.get("target_enemy"),
             "detected_enemies": status.get("detected_enemies", []),
-            "sensors": status.get("sensors", self._get_default_sensors())
+            "sensors": status.get("sensors", self._get_default_sensors()),
         }
 
         self._send_message("status", agv_status)
         logger.debug("상태 전송: mode=%s, state=%s", agv_status['mode'], agv_status['state'])
 
     def send_log(self, message: str, level: str = "info"):
-        data = {
-            "message": message,
-            "level": level
-        }
-
+        data = {"message": message, "level": level}
         self._send_message("log", data)
         logger.debug("로그 전송: %s", message)
 
     def send_target_found(self, enemy: dict):
-        """타겟 발견 알림 전송"""
-        data = {
-            "enemy": enemy
-        }
+        data = {"enemy": enemy}
         self._send_message("target_found", data)
         logger.info("타겟 발견: %s", enemy.get('name', 'Unknown'))
 
     def send_path_update(self, points: list, algorithm: str = "a_star"):
-        """경로 업데이트 전송"""
-        # 경로 길이 계산
         total_length = 0.0
         for i in range(len(points) - 1):
             dx = points[i + 1]["x"] - points[i]["x"]
@@ -204,13 +210,12 @@ class AGVWebSocketClient:
             "points": points,
             "length": total_length,
             "algorithm": algorithm,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
         }
         self._send_message("path_update", data)
         logger.debug("경로 전송: %d개 포인트, 길이=%.2fm", len(points), total_length)
 
     def _convert_state(self, status: dict) -> str:
-        """상태 변환 (moving -> state)"""
         if status.get("moving"):
             return "moving"
         elif status.get("charging"):
@@ -221,24 +226,19 @@ class AGVWebSocketClient:
             return "idle"
 
     def _convert_target_pos(self, target_cell) -> Optional[dict]:
-        """목표 셀을 위치 데이터로 변환"""
         if target_cell is None:
             return None
-
-        # target_cell이 [gx, gy] 형식이라고 가정
-        # 실제 좌표로 변환 필요 (그리드 -> 미터)
         if isinstance(target_cell, (list, tuple)) and len(target_cell) >= 2:
             return {
                 "x": float(target_cell[0]),
                 "y": float(target_cell[1]),
                 "angle": 0.0,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
         return None
 
-    # 아마 안쓸 것 같은 함수
     def _get_default_sensors(self) -> dict:
-        """기본 센서 데이터"""
+        """status에 sensors 필드가 누락된 경우의 기본값. 호출자가 매번 같은 dict를 만들지 않게 한다."""
         return {
             "front_distance": 0.0,
             "left_distance": 0.0,
@@ -250,43 +250,35 @@ class AGVWebSocketClient:
             "gyro_y": 0.0,
             "gyro_z": 0.0,
             "camera_active": False,
-            "objects_detected": 0
+            "objects_detected": 0,
         }
 
     def update_position(self, x: float, y: float, angle: float):
-        """내부 위치 업데이트"""
         self.current_position = {"x": x, "y": y, "angle": angle}
 
     def update_battery(self, battery: int):
-        """배터리 업데이트"""
         self.battery = battery
 
     def update_speed(self, speed: float):
-        """속도 업데이트"""
         self.speed = speed
 
     def close(self):
-        """연결 종료"""
-        if self.websocket:
+        if self.websocket and self.loop:
             asyncio.run_coroutine_threadsafe(
                 self.websocket.close(),
-                self.loop
+                self.loop,
             )
-        self.connected = False
+        self._connected_event.clear()
         logger.info("WebSocket 연결 종료")
 
     async def execute_move_command(self, target_x, target_y, mode):
-        """이동 명령 실행"""
         logger.info("이동: (%s, %s)", target_x, target_y)
         # TODO: 실제 이동 로직
 
     async def change_mode(self, new_mode):
-        """모드 변경"""
         logger.info("모드 변경: %s", new_mode)
         # TODO: 모드 변경 로직
 
     async def execute_emergency_stop(self, reason):
-        """긴급 정지"""
         logger.info("긴급 정지: %s", reason)
         # TODO: 긴급 정지 로직
-
