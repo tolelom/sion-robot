@@ -197,7 +197,10 @@ def main() -> None:
             # 모드 매니저 틱 — 목표 상태 갱신
             mode_mgr.tick(current_cell, is_moving)
 
-            # 목표가 있으면 이동 시작
+            # 목표가 있으면 이동 시작.
+            # invariant: move_th는 한 번에 하나만 살아 있다. is_moving 가드(위에서 is_alive 확인)가
+            # 동시 실행을 막고, 이전 move_th 객체는 새 할당으로 해제되어 GC된다(데몬 스레드라
+            # 명시 join 불필요). 새 goal은 이전 follow가 자연 종료된 다음 cycle에 picked up된다.
             goal_cell = state.get_goal_cell()
             if not is_moving and goal_cell is not None:
                 is_enemy = state.is_enemy_goal()

@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BACKEND_WS_URL = "ws://localhost:3000/websocket/agv"
 DEFAULT_START_TIMEOUT_SEC = 5.0
 DEFAULT_SEND_TIMEOUT_SEC = 1.0
+INITIAL_RECONNECT_BACKOFF_SEC = 1.0
+MAX_RECONNECT_BACKOFF_SEC = 30.0
 
 
 def resolve_backend_ws_url(explicit: Optional[str] = None) -> str:
@@ -36,6 +38,9 @@ class AGVWebSocketClient:
         self.server_url = resolve_backend_ws_url(server_url)
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self._connected_event = threading.Event()
+        # close()가 호출되면 set된다. _connect_and_listen 루프는 이 이벤트를 보고
+        # 백오프 대기 후 종료한다. 다음 cycle 진입 직전과 백오프 sleep 직후 폴링.
+        self._stop_requested = threading.Event()
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.receive_thread: Optional[threading.Thread] = None
 
@@ -73,24 +78,45 @@ class AGVWebSocketClient:
         self.loop.run_until_complete(self._connect_and_listen())
 
     async def _connect_and_listen(self):
-        try:
-            async with websockets.connect(self.server_url) as websocket:
-                self.websocket = websocket
-                self._connected_event.set()
-                logger.info("Web Socket 연결 시도: %s", self.server_url)
+        """연결 → 메시지 루프 → 단절 시 백오프 재시도를 close()까지 반복한다.
 
-                async for message in websocket:
-                    await self._handle_message(message)
+        백오프: 1s → 2 → 4 → 8 → 16 → 30(max). 연결 성공 시 리셋.
+        무한 재시도가 의도(운영 중 backend 재시작에도 자동 복구). 종료는 close() 호출로.
+        """
+        backoff = INITIAL_RECONNECT_BACKOFF_SEC
+        while not self._stop_requested.is_set():
+            try:
+                async with websockets.connect(self.server_url) as websocket:
+                    self.websocket = websocket
+                    self._connected_event.set()
+                    # 성공 시 백오프 리셋. 다음 단절 후 재시도는 다시 1s부터.
+                    backoff = INITIAL_RECONNECT_BACKOFF_SEC
+                    logger.info("Web Socket 연결: %s", self.server_url)
 
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.warning("WebSocket 연결 종료: code=%s reason=%s", e.code, e.reason)
-        except (websockets.exceptions.WebSocketException, OSError) as e:
-            logger.warning("WebSocket 네트워크 오류: %s", e)
-        except Exception:
-            logger.exception("WebSocket 예기치 못한 오류")
-        finally:
+                    async for message in websocket:
+                        await self._handle_message(message)
+
+            except websockets.exceptions.ConnectionClosed as e:
+                logger.warning("WebSocket 연결 종료: code=%s reason=%s", e.code, e.reason)
+            except (websockets.exceptions.WebSocketException, OSError) as e:
+                logger.warning("WebSocket 네트워크 오류: %s", e)
+            except Exception:
+                logger.exception("WebSocket 예기치 못한 오류")
+
             self._connected_event.clear()
             self.websocket = None
+
+            if self._stop_requested.is_set():
+                break
+
+            logger.info("재연결까지 %.1fs 대기", backoff)
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                break
+            backoff = min(backoff * 2, MAX_RECONNECT_BACKOFF_SEC)
+
+        logger.info("WebSocket loop 종료")
 
     async def _handle_message(self, message: str):
         try:
@@ -263,13 +289,19 @@ class AGVWebSocketClient:
         self.speed = speed
 
     def close(self):
+        """명시적 종료 신호. _connect_and_listen 루프가 다음 cycle에서 break한다.
+
+        진행 중인 websocket이 있으면 close해서 ConnectionClosed로 루프를 즉시 깨운다.
+        백오프 sleep 중이면 그 sleep이 끝날 때까지 대기(최대 MAX_RECONNECT_BACKOFF_SEC).
+        """
+        self._stop_requested.set()
         if self.websocket and self.loop:
             asyncio.run_coroutine_threadsafe(
                 self.websocket.close(),
                 self.loop,
             )
         self._connected_event.clear()
-        logger.info("WebSocket 연결 종료")
+        logger.info("WebSocket 연결 종료 요청")
 
     async def execute_move_command(self, target_x, target_y, mode):
         logger.info("이동: (%s, %s)", target_x, target_y)
