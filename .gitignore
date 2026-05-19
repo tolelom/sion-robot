@@ -5,3 +5,10 @@ __pycache__/
 .vscode/
 .env
 .DS_Store
+
+# Test / coverage artifacts
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+coverage.xml
