@@ -1,0 +1,39 @@
+name: Sion Robot Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 개발 의존성 설치
+        run: pip install -r requirements-dev.txt
+
+      - name: pytest 실행 (+커버리지)
+        # 로봇 모듈은 sion/ 디렉토리에 있고 상대 import를 쓰므로 cwd가 sion이어야 한다.
+        # (conftest.py가 sys.path에 .을 끼워 넣어 import를 풀어준다.)
+        run: |
+          python -m pytest tests/ \
+            --cov=astar --cov=path_utils --cov=map_loader \
+            --cov=state --cov=mode_manager --cov=follow_path --cov=path_planner \
+            --cov-report=term \
+            --cov-fail-under=80
