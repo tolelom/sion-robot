@@ -1,83 +1,80 @@
-# Sion (Robot)
+# Sion Robot
 
-LoL 사이온 궁극기를 구현한 AGV의 로봇 제어 코드 (Python).
+> Jetson 기반 AGV 제어 코드
 
-- [sion-backend](https://github.com/tolelom/sion-backend) — 백엔드 서버
-- [sion-frontend](https://github.com/tolelom/sion-frontend) — 웹 대시보드
+Python 3.12 · A* · 멀티스레드 · pytest
 
-## Tech Stack
+## 개요
 
-- Python 3.12
-- A* 경로 탐색 (8방향, 적 추적용 회전 최소화 변형 포함)
-- 멀티스레드 (메인 / 모션 / WebSocket)
-- `pytest` + `pytest-mock` + `pytest-cov` (커버리지 91%)
+Sion은 LoL 챔피언 사이온의 궁극기(목표를 향한 직선 돌진)를 Jetson 기반 AGV로 옮긴 프로젝트다. AGV는 맵에서 적을 찾아 장애물을 피해 접근한 뒤 직선 구간에서 가속해 돌진한다.
+
+이 저장소는 AGV에서 도는 제어 코드다. 격자 맵에서 경로를 계획하고, 바퀴 속도로 위치를 추정하며 경로를 따라가고, 적에게 도달하면 회전한 뒤 서보 팔로 공격 동작을 한다.
+
+## 시스템 구성
+
+```mermaid
+flowchart LR
+    Web["sion-web<br/>대시보드"] -- "WebSocket<br/>상태 수신, 명령 전송" --> API["sion-api<br/>Go Fiber"]
+    Web -- "REST<br/>A* 경로 요청" --> API
+    API -. "WebSocket<br/>원래 구성" .-> Robot["sion-robot<br/>Jetson AGV 제어"]
+    API -- "데모" --> Sim["AGV 시뮬레이터"]
+```
+
+| 저장소 | 역할 |
+|---|---|
+| [sion-web](https://github.com/tolelom/sion-web) | 관제 대시보드 |
+| [sion-api](https://github.com/tolelom/sion-api) | A* 경로 탐색, 데모용 AGV 시뮬레이터. 원래 구성에서는 AGV와 대시보드 사이 상태 중계 |
+| sion-robot | AGV 제어. 경로 계획, 경로 추종, 적 돌진(이 저장소) |
+
+공개 데모는 이 코드 대신 sion-api의 시뮬레이터로 동작한다.
+
+## 기능
+
+- 경로 계획: 장애물 팽창, A*, 경로 평활화, 적 목표일 때 직선 돌진 구간 추가
+- 적 추적용 A* 변형: 회전을 줄이는 경로 선호
+- 경로 추종: 일정 속도 주행, 돌진 구간 가속, 취소 요청에 반응
+- 위치 추정: 명령한 선속도·각속도로 계산하는 추측 항법
+- 적 도달 동작: 회전 후 서보 팔 공격, 초기 자세 복귀
+- 자동 모드: 일정 간격으로 맵 안의 무작위 목표 선정
+- 하드웨어가 없으면 `DummyRobot`으로 자동 전환(로그만 남기고 모터는 움직이지 않음)
+
+## 구조
+
+| 경로 | 책임 |
+|---|---|
+| `controller.py` | 진입점. 메인 루프, 카메라 스레드, 이동 스레드 관리 |
+| `state.py` | 스레드 간 공유 상태(lock 기반) |
+| `mode_manager.py` | 자동/수동 모드 전환, 무작위 목표 선정 |
+| `path_planner.py` | 팽창 → A* → 평활화 → 돌진 구간 파이프라인 |
+| `astar.py` | 일반 A*와 적 추적용 A* |
+| `path_utils.py` | 시야선 검사, 평활화, 팽창, Bresenham, 돌진 구간 |
+| `follow_path.py` | 위치 추정과 경로 추종, 적 도달 동작 |
+| `hardware.py` | 로봇 인터페이스와 JETANK·더미 구현 |
+| `map_loader.py` | JSON 맵 로드, 셀↔월드 좌표 변환 |
+| `config.py` | 속도, 팽창 반경, 서보 각도 등 상수 |
+| `tolelom/` | 서버 연동용 WebSocket 클라이언트(단독 실행). 제어 루프와는 연결되어 있지 않다 |
+| `show_map.py`, `show_path.py`, `generate_smallroom_map.py` | 맵·경로 시각화와 맵 생성 |
+| `calib_motion.py` | 모터 캘리브레이션 |
+| `tests/` | pytest 단위·통합 테스트. `conftest.py`의 `make_map`으로 문자열 격자에서 맵을 만든다 |
 
 ## 실행
 
+Python 3.12가 필요하다. 실제 AGV에서는 `jetbot`, `SCSCtrl` 패키지가, 카메라 스레드에는 OpenCV가 필요하다.
+
 ```bash
-pip install -r requirements-dev.txt
+git clone https://github.com/tolelom/sion-robot.git
+cd sion-robot
+
+pip install -r requirements-dev.txt opencv-python
 python controller.py
 ```
 
-> 이전의 `main_controller.py`는 삭제됐습니다. `controller.py`가 새 엔트리이며, 책임을 `state.py` / `mode_manager.py`로 분리한 슬림 오케스트레이터입니다.
+`jetbot`이나 `SCSCtrl`을 import하지 못하면 `DummyRobot`으로 넘어가므로 데스크톱에서도 실행할 수 있다. 맵 파일은 `config.py`의 `MAP_FILE`로 정한다.
 
-### 하드웨어 없이 실행
-
-`hardware.py`의 `create_robot(dummy=True)` 또는 jetbot/SCSCtrl 패키지가 import 실패하면 자동으로 `DummyRobot`으로 폴백됩니다. 로그만 찍고 모터는 동작하지 않으니 데스크탑에서 안전하게 실행 가능합니다.
-
-## Tests
-
-```bash
-pip install -r requirements-dev.txt
-python -m pytest tests/                          # 101 tests
-python -m pytest tests/ --cov=astar --cov=path_utils --cov=map_loader \
-                       --cov=state --cov=mode_manager --cov=follow_path \
-                       --cov=path_planner        # 커버리지 91%
-python -m pytest -m unit                         # 특정 마커만
-```
-
-CI는 매 push마다 pytest를 돌리고 커버리지가 80% 미만이면 실패시킵니다.
-
-### 테스트 구조
-
-| 파일 | 대상 모듈 | 케이스 | 모킹 |
-|---|---|---|---|
-| `tests/test_astar.py` | `astar.py` | 13 | 없음 (순수 함수) |
-| `tests/test_path_utils.py` | `path_utils.py` | 21 | 없음 |
-| `tests/test_map_loader.py` | `map_loader.py` | 10 | 없음 |
-| `tests/test_state.py` | `state.py` | 18 | 멀티스레드 검증 |
-| `tests/test_mode_manager.py` | `mode_manager.py` | 22 | `plan_path_for_goal`, `random` |
-| `tests/test_follow_path.py` | `follow_path.py` | 13 | `SpyRobot` (RobotBase) |
-| `tests/test_path_planner.py` | `path_planner.py` | 4 | 없음 |
-
-`tests/conftest.py`의 `make_map(grid_str)` 헬퍼로 문자열 그리드에서 `MapData`를 만들 수 있습니다 (`'.'`=빈칸, `'#'`=벽, `'E'`=적, `'S'`=시작).
-
-## 모듈 구조
-
-| 파일 | 책임 |
+| 명령 | 용도 |
 |---|---|
-| `controller.py` | 스레드 오케스트레이터 (메인 진입점) |
-| `state.py` | `AGVState` — 스레드 안전 공유 상태 (lock 기반) |
-| `mode_manager.py` | auto/manual 모드 전환, 랜덤 목표 선정 |
-| `hardware.py` | `RobotBase` 인터페이스 + `JetankRobot` / `DummyRobot` |
-| `follow_path.py` | `PoseEstimator` + 경로 따라가기 (협조적 cancel 지원) |
-| `path_planner.py` | inflate → A* → smooth → (적이면 charge segment) 파이프라인 |
-| `astar.py` | `astar_normal` + `astar_enemy` (회전 최소화) + `plan_path` dispatch |
-| `path_utils.py` | LoS, smoothing, inflation, Bresenham, charge segment |
-| `map_loader.py` | JSON 맵 → `MapData` + 셀↔월드 좌표 변환 |
-| `config.py` | 모든 상수 (V_CRUISE, V_CHARGE, INFLATE_RADIUS, 서보 각도 등) |
-| `tolelom/web_socket_client.py` | async WS 클라이언트 (재연결) |
-| `tolelom/main.py` | WS 클라이언트 단독 실행 |
-| `show_map.py` / `show_path.py` / `generate_smallroom_map.py` | 시각화/디버깅 도우미 |
-| `calib_motion.py` | 모터 캘리브레이션 스크립트 |
+| `python controller.py` | 제어 루프 실행 |
+| `python -m pytest` | 테스트 |
+| `python show_map.py [맵 파일]` | 맵 시각화 |
 
-## 주요 상수 (`config.py`)
-
-```python
-V_CRUISE = 0.35           # 일반 주행 속도 (m/s)
-V_CHARGE = 0.8            # 적 돌진 속도 (m/s)
-INFLATE_RADIUS = 2        # 장애물 인플레이션 (셀)
-MIN_CHARGE_CELLS = 8      # 돌진 구간 최소 길이
-POSE_PERIOD_SEC = 0.5     # pose 갱신 주기
-AUTO_INTERVAL_SEC = 5.0   # 자동 모드 목표 재선정 간격
-```
+CI는 push마다 pytest를 커버리지 하한과 함께 돌린다.
