@@ -1,4 +1,3 @@
-"""로봇 하드웨어 추상화: RobotBase 인터페이스와 JETANK·더미 구현."""
 import logging
 from abc import ABC, abstractmethod
 from typing import Tuple
@@ -13,7 +12,7 @@ def _clamp_unit(value: float) -> float:
 
 
 def mix_differential(v_norm: float, omega_norm: float, omega_gain: float = OMEGA_MIX_GAIN) -> Tuple[float, float]:
-    """정규화된 (선속도, 각속도)를 좌·우 바퀴 출력 [-1, 1]로 바꾼다(차동 구동)."""
+    """(left, right) 바퀴 출력을 [-1, 1]로 돌려준다."""
     v_norm = _clamp_unit(v_norm)
     omega_norm = _clamp_unit(omega_norm)
     left = _clamp_unit(v_norm - omega_gain * omega_norm)
@@ -74,11 +73,7 @@ class DummyRobot(RobotBase):
 
 
 def create_robot(dummy: bool = False) -> RobotBase:
-    """JETANK 하드웨어를 연다. jetbot/SCSCtrl을 import할 수 없으면 DummyRobot으로 대체한다.
-
-    import 이외의 초기화 실패(시리얼 포트 등)는 그대로 전파한다 — 실제 로봇에서
-    하드웨어 고장을 더미로 조용히 덮지 않기 위해서다.
-    """
+    # ImportError일 때만 더미로 대체한다. 시리얼 포트 등 실제 하드웨어 고장은 덮지 않고 전파한다.
     if dummy:
         return DummyRobot()
     try:
