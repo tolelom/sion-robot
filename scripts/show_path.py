@@ -1,5 +1,7 @@
-# show_path.py — 경로 시각화 유틸리티
+"""MAP_FILE의 시작점→첫 적 경로를 텍스트로 그린다.
 
+사용: python -m scripts.show_path
+"""
 import json
 import logging
 from typing import List, Tuple
@@ -7,7 +9,7 @@ from typing import List, Tuple
 from map_loader import load_map, cell_to_world
 from path_planner import plan_path_for_goal
 from path_utils import bresenham_line
-from config import INFLATE_RADIUS, MIN_CHARGE_CELLS, MAP_FILE
+from config import INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS, MAP_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ def main():
         start_cell=start,
         goal_cell=goal_cell,
         is_enemy_goal=is_enemy_goal,
-        inflate_radius=INFLATE_RADIUS,
+        inflate_radius=INFLATE_RADIUS_CELLS,
         min_charge_cells=MIN_CHARGE_CELLS,
     )
 
@@ -75,7 +77,7 @@ def main():
     logger.info("Used enemy mode: %s", used_enemy_mode)
     logger.info("Final path length (cells): %d", len(path))
 
-    with open(MAP_FILE, "r") as f:
+    with open(MAP_FILE, "r", encoding="utf-8") as f:
         raw = json.load(f)
         cells = raw["cells"]
 

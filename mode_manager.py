@@ -1,24 +1,30 @@
-# mode_manager.py — auto/manual 모드 전환 로직
-# main_controller.py에 분산되어 있던 모드 전환 조건들을 한 곳에 집중
-
 import random
 import time
-from typing import Optional, Tuple
+from typing import Any, Dict, NamedTuple, Optional
 
-from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS
+from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
+from map_loader import MapData, world_to_cell
 from path_planner import plan_path_for_goal
-from state import AGVState
+from state import MODE_AUTO, MODE_MANUAL, VALID_MODES, AGVState, Cell
+
+RANDOM_GOAL_MAX_TRIES = 80
+
+
+class ParsedGoal(NamedTuple):
+    cell: Optional[Cell]
+    is_enemy: bool
+    error: str = ""
 
 
 class ModeManager:
 
-    def __init__(self, state: AGVState, m):
+    def __init__(self, state: AGVState, m: MapData):
         self._state = state
         self._map = m
         self._last_auto_time = time.time()
 
-    def apply_server_command(self, cmd: dict, is_moving: bool) -> None:
-        if "mode" in cmd and cmd["mode"] in ("auto", "manual"):
+    def apply_server_command(self, cmd: Dict[str, Any], is_moving: bool) -> None:
+        if cmd.get("mode") in VALID_MODES:
             self._state.set_mode(cmd["mode"])
 
         goal_cell, is_enemy, err = self._parse_goal(cmd)
@@ -34,14 +40,14 @@ class ModeManager:
             else:
                 self._state.set_goal_cell(goal_cell)
 
-    def tick(self, current_cell: Tuple[int, int], is_moving: bool) -> None:
+    def tick(self, current_cell: Cell, is_moving: bool) -> None:
         mode = self._state.get_mode()
 
-        if mode == "manual":
+        if mode == MODE_MANUAL:
             if not is_moving and self._state.get_goal_cell() is None:
                 self._state.promote_pending_goal()
 
-        elif mode == "auto":
+        elif mode == MODE_AUTO:
             self._state.set_pending_goal_cell(None)
             now = time.time()
             if (not is_moving
@@ -53,52 +59,50 @@ class ModeManager:
                     self._state.set_enemy_goal(False)
                 self._last_auto_time = now
 
-    def pick_random_goal(self, start_cell: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+    def pick_random_goal(self, start_cell: Cell) -> Optional[Cell]:
         m = self._map
-        for _ in range(80):
-            gx = random.randint(0, m.width - 1)
-            gy = random.randint(0, m.height - 1)
-            goal = (gx, gy)
+        for _ in range(RANDOM_GOAL_MAX_TRIES):
+            goal = (random.randint(0, m.width - 1), random.randint(0, m.height - 1))
             if goal == start_cell:
                 continue
             path_cells, _ = plan_path_for_goal(
                 m, start_cell=start_cell, goal_cell=goal,
                 is_enemy_goal=False,
-                inflate_radius=INFLATE_RADIUS,
+                inflate_radius=INFLATE_RADIUS_CELLS,
                 min_charge_cells=MIN_CHARGE_CELLS,
             )
             if path_cells is not None:
                 return goal
         return None
 
-    def _parse_goal(self, cmd: dict):
-        from map_loader import world_to_cell
+    def _in_map(self, x: int, y: int) -> bool:
+        return 0 <= x < self._map.width and 0 <= y < self._map.height
 
+    def _parse_goal(self, cmd: Dict[str, Any]) -> ParsedGoal:
+        """cmd["goal"] = {"type": "cell"|"world", "x": ..., "y": ...}"""
         is_enemy = bool(cmd.get("is_enemy_goal", False))
         goal = cmd.get("goal")
         if not isinstance(goal, dict):
-            return None, is_enemy, "no goal in command" if goal is None else "goal must be a dict"
+            return ParsedGoal(None, is_enemy, "no goal in command" if goal is None else "goal must be a dict")
 
         gtype = goal.get("type", "cell")
         gx_raw = goal.get("x")
         gy_raw = goal.get("y")
         if gx_raw is None or gy_raw is None:
-            return None, is_enemy, "goal.x / goal.y missing"
+            return ParsedGoal(None, is_enemy, "goal.x / goal.y missing")
 
-        m = self._map
         try:
             if gtype == "cell":
                 gx, gy = int(gx_raw), int(gy_raw)
-                if not (0 <= gx < m.width and 0 <= gy < m.height):
-                    return None, is_enemy, "goal cell out of map range"
-                return (gx, gy), is_enemy, ""
+                if not self._in_map(gx, gy):
+                    return ParsedGoal(None, is_enemy, "goal cell out of map range")
+                return ParsedGoal((gx, gy), is_enemy)
             elif gtype == "world":
-                wx, wy = float(gx_raw), float(gy_raw)
-                cx, cy = world_to_cell(wx, wy, m.resolution)
-                if not (0 <= cx < m.width and 0 <= cy < m.height):
-                    return None, is_enemy, "goal world->cell out of map range"
-                return (cx, cy), is_enemy, ""
+                cx, cy = world_to_cell(float(gx_raw), float(gy_raw), self._map.resolution)
+                if not self._in_map(cx, cy):
+                    return ParsedGoal(None, is_enemy, "goal world->cell out of map range")
+                return ParsedGoal((cx, cy), is_enemy)
             else:
-                return None, is_enemy, f"unknown goal.type={gtype}"
+                return ParsedGoal(None, is_enemy, f"unknown goal.type={gtype}")
         except (TypeError, ValueError) as e:
-            return None, is_enemy, f"goal coord parse error: {e}"
+            return ParsedGoal(None, is_enemy, f"goal coord parse error: {e}")
