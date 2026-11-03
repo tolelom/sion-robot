@@ -1,22 +1,18 @@
-# path_utils.py
+"""격자 경로 후처리.
 
+line_of_sight와 bresenham_line은 오차 누적 방식이 달라 같은 두 점에서도 지나는 셀이 다르다.
+합치면 평활화·돌진 판정 결과가 바뀌므로 따로 둔다.
+"""
 import math
 from typing import List, Tuple
 
-from map_loader import MapData, CellType
+from config import MIN_CHARGE_CELLS
+from map_loader import CellType, MapData
 
 
-# ----------------------------------------------------
-# 1. a->b 직선에 장애물이 끼는지 체크 (이미 있었던 코드)
-# ----------------------------------------------------
 def line_of_sight(m: MapData,
                   a: Tuple[int, int],
                   b: Tuple[int, int]) -> bool:
-    """
-    격자에서 a->b 직선 경로에 WALL이 하나라도 끼는지 검사.
-    Bresenham 기반 간단한 라인 트레이싱.
-    a, b는 (x, y) 셀 인덱스.
-    """
     x0, y0 = a
     x1, y1 = b
 
@@ -52,67 +48,45 @@ def line_of_sight(m: MapData,
                 err += dy
             y += sy
 
-    # 마지막 점도 검사
     if m.grid[y1][x1] == CellType.WALL:
         return False
 
     return True
 
 
-# ----------------------------------------------------
-# 2. A* 경로를 라인오브사이트 기반으로 스무딩
-# ----------------------------------------------------
+def _farthest_visible_index(m: MapData, path: List[Tuple[int, int]], i: int) -> int:
+    """바로 다음 셀이 안 보여도 최소 한 칸은 전진한다."""
+    j = i + 1
+    while j < len(path) and line_of_sight(m, path[i], path[j]):
+        j += 1
+    return max(j - 1, i + 1)
+
+
 def smooth_path_cells(m: MapData,
                       path: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """
-    A*가 만든 셀 경로를 라인오브사이트 기반으로 단순화.
-    - 입력: [(x0,y0), (x1,y1), ..., (xn,yn)]
-    - 출력: 불필요한 중간 노드를 제거한 더 매끈한 경로
-    """
     if not path:
         return path
 
     if len(path) <= 2:
         return path[:]
 
-    smoothed: List[Tuple[int, int]] = []
+    smoothed = [path[0]]
     i = 0
-    n = len(path)
+    while i < len(path) - 1:
+        i = _farthest_visible_index(m, path, i)
+        smoothed.append(path[i])
 
-    smoothed.append(path[0])
-
-    while i < n - 1:
-        j = i + 1
-        # i에서 j까지 직선으로 갈 수 있는 한 최대한 멀리 확장
-        while j < n and line_of_sight(m, path[i], path[j]):
-            j += 1
-        # line_of_sight가 깨진 직전까지가 유효 → j-1이 새 웨이포인트
-        next_idx = j - 1
-        if next_idx == i:  # 안전 체크
-            next_idx = i + 1
-        smoothed.append(path[next_idx])
-        i = next_idx
-
-    # 혹시 마지막 점이 중복되면 정리
     if len(smoothed) >= 2 and smoothed[-1] == smoothed[-2]:
         smoothed.pop()
 
     return smoothed
 
 
-# ----------------------------------------------------
-# 3. 장애물 인플레이션 (로봇 크기 반영)
-# ----------------------------------------------------
 def inflate_map(m: MapData, radius_cells: int) -> MapData:
-    """
-    장애물을 radius_cells 만큼 두껍게 부풀린 새로운 MapData를 반환.
-    - 원본 m은 건드리지 않음
-    - start / enemies 좌표는 그대로 복사
-    """
+    """벽을 radius_cells만큼 두껍게 만든 새 맵. 적·출발 셀은 벽에 덮이지 않게 남긴다."""
     W, H = m.width, m.height
     new_grid = [[CellType.EMPTY for _ in range(W)] for _ in range(H)]
 
-    # 원본 WALL 기준으로 주변을 WALL로 채움
     for y in range(H):
         for x in range(W):
             if m.grid[y][x] == CellType.WALL:
@@ -120,17 +94,15 @@ def inflate_map(m: MapData, radius_cells: int) -> MapData:
                     for xx in range(max(0, x - radius_cells), min(W, x + radius_cells + 1)):
                         new_grid[yy][xx] = CellType.WALL
 
-    # ENEMY 위치는 벽 위에 있더라도 ENEMY로 설정
     for (ex, ey) in m.enemies:
         new_grid[ey][ex] = CellType.ENEMY
 
-    # START 위치도 확보
     if m.start is not None:
         sx, sy = m.start
         if new_grid[sy][sx] == CellType.WALL:
             new_grid[sy][sx] = CellType.EMPTY
 
-    inflated = MapData(
+    return MapData(
         width=m.width,
         height=m.height,
         resolution=m.resolution,
@@ -138,15 +110,10 @@ def inflate_map(m: MapData, radius_cells: int) -> MapData:
         start=m.start,
         enemies=m.enemies[:],
     )
-    return inflated
 
 
-# ----------------------------------------------------
-# 4. 직선 셀 시퀀스 생성 (Bresenham)
-# ----------------------------------------------------
 def bresenham_line(a: Tuple[int, int],
                    b: Tuple[int, int]) -> List[Tuple[int, int]]:
-    """격자에서 a->b 직선상의 셀들을 반환 (Bresenham)"""
     x0, y0 = a
     x1, y1 = b
     points: List[Tuple[int, int]] = []
@@ -173,53 +140,34 @@ def bresenham_line(a: Tuple[int, int],
     return points
 
 
-# ----------------------------------------------------
-# 5. 적(돌진)용: 마지막 구간을 직선 돌진으로 교체
-# ----------------------------------------------------
 def attach_charge_segment(
     m_orig: MapData,
     smooth_path: List[Tuple[int, int]],
-    min_charge_cells: int = 8,   # 직선 돌진 최소 길이 (셀 단위)
+    min_charge_cells: int = MIN_CHARGE_CELLS,
 ) -> List[Tuple[int, int]]:
-    """
-    스무딩된 경로의 마지막 부분을 'goal로 향하는 직선' 구간으로 교체.
-    - 여기서는 '제어용 웨이포인트' 관점에서:
-      → 돌진 구간은 [charge_start, goal] 딱 두 점만 남긴다.
-    - 실제로 직선 상 경로를 그리고 싶으면,
-      출력/디버깅 시에만 Bresenham으로 채워서 보여주면 된다.
+    """목표가 직선으로 보이는 가장 먼 웨이포인트부터 목표까지를 돌진 구간으로 바꾼다.
+
+    제어용 웨이포인트라 돌진 구간은 [돌진 시작점, 목표] 두 점만 남긴다.
     """
     if len(smooth_path) < 2:
         return smooth_path
 
     goal = smooth_path[-1]
-
-    # 뒤에서부터 거슬러 올라가며 가장 먼 line-of-sight 가능 지점 찾기
-    best_idx = len(smooth_path) - 2
+    charge_start_idx = None
     best_len = 0.0
 
     for i in range(len(smooth_path) - 2, -1, -1):
         p = smooth_path[i]
-        # 장애물에 안 부딪히는 직선인가?
         if not line_of_sight(m_orig, p, goal):
             continue
 
-        dx = goal[0] - p[0]
-        dy = goal[1] - p[1]
-        dist = math.hypot(dx, dy)
-
+        dist = math.hypot(goal[0] - p[0], goal[1] - p[1])
         if dist >= min_charge_cells and dist > best_len:
             best_len = dist
-            best_idx = i
+            charge_start_idx = i
 
-    # 조건 만족하는 게 없으면 그냥 원래 경로 사용
-    if best_len <= 0.0:
+    if charge_start_idx is None:
         return smooth_path
 
-    charge_start = smooth_path[best_idx]
-
-    # ★ 핵심:
-    # - best_idx 이전까지는 그대로 둠
-    # - 돌진 구간은 [charge_start, goal] 두 점만 남김
-    new_path = smooth_path[:best_idx + 1] + [goal]
-    return new_path
+    return smooth_path[:charge_start_idx + 1] + [goal]
 

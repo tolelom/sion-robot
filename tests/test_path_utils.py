@@ -13,10 +13,6 @@ from path_utils import (
 from tests.conftest import make_map
 
 
-# ---------------------------------------------------------------------------
-# line_of_sight
-# ---------------------------------------------------------------------------
-
 class TestLineOfSight:
     def test_clear_horizontal(self):
         m = make_map(
@@ -55,10 +51,6 @@ class TestLineOfSight:
         )
         assert line_of_sight(m, (0, 0), (3, 1)) is False
 
-
-# ---------------------------------------------------------------------------
-# smooth_path_cells
-# ---------------------------------------------------------------------------
 
 class TestSmoothPath:
     def test_empty_path_returns_empty(self):
@@ -102,13 +94,8 @@ class TestSmoothPath:
         smoothed = smooth_path_cells(m, path)
         assert smoothed[0] == (0, 0)
         assert smoothed[-1] == (4, 2)
-        # 적어도 시작/끝은 보존
         assert len(smoothed) >= 2
 
-
-# ---------------------------------------------------------------------------
-# inflate_map
-# ---------------------------------------------------------------------------
 
 class TestInflateMap:
     def test_radius_zero_leaves_grid_equivalent(self):
@@ -180,10 +167,6 @@ class TestInflateMap:
         assert inflated.grid[sy][sx] == CellType.EMPTY
 
 
-# ---------------------------------------------------------------------------
-# bresenham_line
-# ---------------------------------------------------------------------------
-
 class TestBresenham:
     def test_horizontal_line(self):
         line = bresenham_line((0, 0), (4, 0))
@@ -206,10 +189,6 @@ class TestBresenham:
     def test_single_point(self):
         assert bresenham_line((2, 2), (2, 2)) == [(2, 2)]
 
-
-# ---------------------------------------------------------------------------
-# attach_charge_segment
-# ---------------------------------------------------------------------------
 
 class TestAttachCharge:
     def test_short_path_unchanged(self):
@@ -245,5 +224,4 @@ class TestAttachCharge:
         path = [(0, 0), (3, 0), (6, 0), (10, 0)]
         result = attach_charge_segment(m, path, min_charge_cells=4)
         assert result[-1] == (10, 0)
-        # 결과 길이는 원본보다 짧거나 같아야 한다.
         assert len(result) <= len(path)

@@ -1,20 +1,21 @@
-# state.py — 공유 상태 전담 클래스
-# 모든 스레드는 이 클래스의 메서드를 통해서만 상태를 읽고 씀
-
 import threading
-from typing import Optional, Tuple, Any, Dict
+from typing import Any, Dict, Optional, Tuple
+
+MODE_AUTO = "auto"
+MODE_MANUAL = "manual"
+VALID_MODES = (MODE_AUTO, MODE_MANUAL)
+
+Cell = Tuple[int, int]
+WorldPose = Tuple[float, float, float]  # (x[m], y[m], theta[rad])
 
 
 class AGVState:
-    """
-    스레드 안전 공유 상태.
-    직접 dict 접근 대신 get_*/set_* 메서드만 사용할 것.
-    """
+    """스레드 간 공유 상태. 모든 접근은 lock을 잡는 메서드로만 한다."""
 
     def __init__(self):
         self._lock = threading.Lock()
         self._state: Dict[str, Any] = {
-            "mode": "auto",
+            "mode": MODE_AUTO,
             "goal_cell": None,
             "pending_goal_cell": None,
             "is_enemy_goal": False,
@@ -29,11 +30,11 @@ class AGVState:
         with self._lock:
             return self._state["mode"]
 
-    def get_goal_cell(self) -> Optional[Tuple[int, int]]:
+    def get_goal_cell(self) -> Optional[Cell]:
         with self._lock:
             return self._state["goal_cell"]
 
-    def get_pending_goal_cell(self) -> Optional[Tuple[int, int]]:
+    def get_pending_goal_cell(self) -> Optional[Cell]:
         with self._lock:
             return self._state["pending_goal_cell"]
 
@@ -41,11 +42,11 @@ class AGVState:
         with self._lock:
             return self._state["is_enemy_goal"]
 
-    def get_pose_world(self) -> Optional[Tuple[float, float, float]]:
+    def get_pose_world(self) -> Optional[WorldPose]:
         with self._lock:
             return self._state["pose_world"]
 
-    def get_pose_cell(self) -> Optional[Tuple[int, int]]:
+    def get_pose_cell(self) -> Optional[Cell]:
         with self._lock:
             return self._state["pose_cell"]
 
@@ -58,15 +59,16 @@ class AGVState:
             return dict(self._state)
 
     def set_mode(self, mode: str) -> None:
-        assert mode in ("auto", "manual"), f"Invalid mode: {mode}"
+        if mode not in VALID_MODES:
+            raise ValueError(f"Invalid mode: {mode!r}")
         with self._lock:
             self._state["mode"] = mode
 
-    def set_goal_cell(self, cell: Optional[Tuple[int, int]]) -> None:
+    def set_goal_cell(self, cell: Optional[Cell]) -> None:
         with self._lock:
             self._state["goal_cell"] = cell
 
-    def set_pending_goal_cell(self, cell: Optional[Tuple[int, int]]) -> None:
+    def set_pending_goal_cell(self, cell: Optional[Cell]) -> None:
         with self._lock:
             self._state["pending_goal_cell"] = cell
 
@@ -74,7 +76,7 @@ class AGVState:
         with self._lock:
             self._state["is_enemy_goal"] = value
 
-    def set_pose(self, world: Tuple[float, float, float], cell: Tuple[int, int]) -> None:
+    def set_pose(self, world: WorldPose, cell: Cell) -> None:
         with self._lock:
             self._state["pose_world"] = world
             self._state["pose_cell"] = cell
@@ -88,7 +90,7 @@ class AGVState:
         with self._lock:
             self._state["last_cmd_ts"] = ts
 
-    def promote_pending_goal(self) -> Optional[Tuple[int, int]]:
+    def promote_pending_goal(self) -> Optional[Cell]:
         with self._lock:
             pending = self._state["pending_goal_cell"]
             if pending is not None:
@@ -96,8 +98,16 @@ class AGVState:
                 self._state["pending_goal_cell"] = None
             return pending
 
-    def consume_goal(self) -> Optional[Tuple[int, int]]:
+    def consume_goal(self) -> Optional[Cell]:
         with self._lock:
             goal = self._state["goal_cell"]
             self._state["goal_cell"] = None
             return goal
+
+    def take_goal(self) -> Tuple[Optional[Cell], bool]:
+        # consume_goal()과 is_enemy_goal()을 따로 부르면 그 사이 다른 스레드가 바꿔 짝이 어긋날 수 있어
+        # 한 번의 lock 안에서 함께 읽는다.
+        with self._lock:
+            goal = self._state["goal_cell"]
+            self._state["goal_cell"] = None
+            return goal, self._state["is_enemy_goal"]

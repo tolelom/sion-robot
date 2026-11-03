@@ -42,8 +42,9 @@ class TestSetters:
 
     def test_set_mode_rejects_invalid(self):
         s = AGVState()
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             s.set_mode("turbo")
+        assert s.get_mode() == "auto"
 
     def test_set_goal_cell_round_trip(self):
         s = AGVState()
@@ -138,7 +139,6 @@ class TestThreadSafety:
         for t in threads:
             t.join(timeout=10)
         assert errors == []
-        # 끝나고도 mode가 유효 값이어야 함
         assert s.get_mode() in ("auto", "manual")
 
     def test_concurrent_promote_pending_goal_unique_owner(self):
@@ -164,3 +164,16 @@ class TestThreadSafety:
 
         # 정확히 한 스레드만 (5,5)를 받아야 한다
         assert winners == [(5, 5)]
+
+
+class TestTakeGoal:
+    def test_returns_goal_and_flag_and_clears(self):
+        s = AGVState()
+        s.set_goal_cell((1, 2))
+        s.set_enemy_goal(True)
+        assert s.take_goal() == ((1, 2), True)
+        assert s.get_goal_cell() is None
+        assert s.is_enemy_goal() is True  # 플래그는 그대로 둔다(consume_goal과 동일)
+
+    def test_empty(self):
+        assert AGVState().take_goal() == (None, False)

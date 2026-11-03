@@ -1,37 +1,45 @@
-import logging
-import time
-import threading
-import queue
-from datetime import datetime
-from typing import Optional, Any, Dict, Tuple
+"""WebSocket 주기 송신 데모. 저장소 루트에서 `python -m tolelom.main`으로 실행한다.
 
-logger = logging.getLogger(__name__)
+get_position·get_status·get_path_points는 가짜 값이며, 제어 루프와 연결할 때 교체한다.
+"""
+import logging
+import queue
+import threading
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from tolelom.web_socket_client import AGVWebSocketClient, resolve_backend_ws_url
 
-ws_client: Optional[AGVWebSocketClient] = None
+logger = logging.getLogger(__name__)
 
-# (type, payload) 형태로 전송 작업을 쌓아두는 큐
-outbox: "queue.Queue[Tuple[str, Dict[str, Any]]]" = queue.Queue()
+POSITION_PERIOD_SEC = 0.1
+STATUS_PERIOD_SEC = 0.5
+PATH_PERIOD_SEC = 2.0
+DISCONNECTED_POLL_SEC = 0.2
+LOOP_IDLE_SEC = 0.02
+SHUTDOWN_JOIN_SEC = 2.0
+
+OutboxItem = Tuple[str, Dict[str, Any]]
+outbox: "queue.Queue[OutboxItem]" = queue.Queue()
 
 
-def init_websocket_client(server_url: Optional[str] = None):
-    global ws_client
-    ws_client = AGVWebSocketClient(resolve_backend_ws_url(server_url))
-    ws_client.start()
-    return ws_client
+def init_websocket_client(server_url: Optional[str] = None) -> AGVWebSocketClient:
+    client = AGVWebSocketClient(resolve_backend_ws_url(server_url))
+    client.start()
+    return client
 
 
-# ====== 실제 시스템에서는 여기만 하드웨어/알고리즘 값으로 교체 ======
-cnt = 0.0
+_fake_pos = 0.0
+
+
 def get_position() -> Tuple[float, float, float]:
-    # TODO: localization/odometry에서 읽기
-    global cnt
-    cnt += 0.1
-    return cnt, cnt, 0.0
+    global _fake_pos
+    _fake_pos += 0.1
+    return _fake_pos, _fake_pos, 0.0
+
 
 def get_status() -> Dict[str, Any]:
-    # TODO: 내부 상태머신/센서에서 읽기
     return {
         "mode": "auto",
         "state": "moving",
@@ -45,94 +53,102 @@ def get_status() -> Dict[str, Any]:
             "left_distance": 200.0,
             "right_distance": 180.0,
             "camera_active": True,
-            "objects_detected": 3
-        }
+            "objects_detected": 3,
+        },
     }
 
-def get_path_points() -> list[dict]:
-    # TODO: planner에서 최신 경로 가져오기
+
+def get_path_points() -> List[Dict[str, Any]]:
     now = datetime.now().isoformat()
     return [
         {"x": 10.5, "y": 20.3, "angle": 0.0, "timestamp": now},
         {"x": 12.0, "y": 22.0, "angle": 0.0, "timestamp": now},
         {"x": 15.0, "y": 25.0, "angle": 0.0, "timestamp": now},
     ]
-# =====================================================================
 
 
-def enqueue_log(msg: str, level: str = "info"):
+def enqueue_log(msg: str, level: str = "info") -> None:
     outbox.put(("log", {"message": msg, "level": level}))
 
-def enqueue_target_found(enemy: Dict[str, Any]):
+
+def enqueue_target_found(enemy: Dict[str, Any]) -> None:
     outbox.put(("target_found", {"enemy": enemy}))
 
 
-def send_loop(stop_evt: threading.Event,
-              pos_period: float = 0.1,     # 10Hz
-              status_period: float = 0.5,  # 2Hz
-              path_period: float = 2.0     # 0.5Hz
-              ):
-    global ws_client
+def drain_outbox(client: AGVWebSocketClient, box: "queue.Queue[OutboxItem]") -> int:
+    """보낸 개수를 반환한다."""
+    sent = 0
+    while True:
+        try:
+            typ, payload = box.get_nowait()
+        except queue.Empty:
+            return sent
+        if typ == "log":
+            client.send_log(payload["message"], payload["level"])
+        elif typ == "target_found":
+            client.send_target_found(payload["enemy"])
+        else:
+            logger.warning("알 수 없는 outbox 항목 type=%s — 버린다", typ)
+            continue
+        sent += 1
 
-    next_pos = time.monotonic()
-    next_status = time.monotonic()
-    next_path = time.monotonic()
+
+def send_loop(
+    client: AGVWebSocketClient,
+    stop_evt: threading.Event,
+    pos_period: float = POSITION_PERIOD_SEC,
+    status_period: float = STATUS_PERIOD_SEC,
+    path_period: float = PATH_PERIOD_SEC,
+    box: "queue.Queue[OutboxItem]" = outbox,
+) -> None:
+    next_pos = next_status = next_path = time.monotonic()
     was_connected = False
 
     while not stop_evt.is_set():
-        # 연결 안 되어 있으면 잠깐 쉬고 재시도(재연결 로직은 AGVWebSocketClient 정책에 맞춰 확장).
-        if not ws_client or not ws_client.connected:
+        if not client.connected:
             was_connected = False
-            stop_evt.wait(0.2)
+            stop_evt.wait(DISCONNECTED_POLL_SEC)
             continue
 
-        # 재연결 직후엔 schedule을 현재 시각으로 리셋한다. 연결 단절 동안 next_* < now가 누적되어
-        # 한 사이클에 position/status/path가 연속 발사되는 catch-up burst를 막는다.
+        # 끊긴 동안 밀린 주기를 재연결 직후 한꺼번에 보내지 않도록 일정을 지금으로 되돌린다.
         if not was_connected:
-            base = time.monotonic()
-            next_pos = base
-            next_status = base
-            next_path = base
+            next_pos = next_status = next_path = time.monotonic()
             was_connected = True
 
         now = time.monotonic()
 
-        # 1) 주기 전송: position
-        if now >= next_pos:
-            x, y, angle = get_position()
-            ws_client.send_position(x, y, angle)
-            next_pos += pos_period
-
-        # 2) 주기 전송: status
-        if now >= next_status:
-            ws_client.send_status(get_status())
-            next_status += status_period
-
-        # 3) 주기 전송: path
-        if now >= next_path:
-            ws_client.send_path_update(get_path_points(), "a_star")
-            next_path += path_period
-
-        # 4) 비주기 이벤트(로그/타겟발견 등) 처리: 한 루프에서 몰아서 전송
+        # 예외 한 번에 송신 스레드가 죽으면 프로세스는 살아 있는데 아무것도 안 보내게 된다.
         try:
-            while True:
-                typ, payload = outbox.get_nowait()
-                if typ == "log":
-                    ws_client.send_log(payload["message"], payload["level"])
-                elif typ == "target_found":
-                    ws_client.send_target_found(payload["enemy"])
-        except queue.Empty:
-            pass
+            if now >= next_pos:
+                next_pos += pos_period
+                x, y, angle = get_position()
+                client.send_position(x, y, angle)
 
-        # 너무 바쁘게 돌지 않게 짧게 sleep
-        stop_evt.wait(0.02)
+            if now >= next_status:
+                next_status += status_period
+                client.send_status(get_status())
+
+            if now >= next_path:
+                next_path += path_period
+                client.send_path_update(get_path_points(), "a_star")
+
+            drain_outbox(client, box)
+        except Exception:
+            logger.exception("send_loop 사이클 실패 — 다음 주기에 계속")
+
+        stop_evt.wait(LOOP_IDLE_SEC)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     client = init_websocket_client()
 
     stop_evt = threading.Event()
-    th = threading.Thread(target=send_loop, args=(stop_evt,), daemon=True)
+    th = threading.Thread(target=send_loop, args=(client, stop_evt), daemon=True)
     th.start()
 
     enqueue_log("AGV 주기 전송 시작", "info")
@@ -141,11 +157,13 @@ if __name__ == "__main__":
         logger.info("주기 전송 중... (Ctrl+C로 종료)")
         while True:
             time.sleep(1)
-            # 예시: 이벤트성 메시지
-            # enqueue_target_found({...})
     except KeyboardInterrupt:
         logger.info("종료 중...")
     finally:
         stop_evt.set()
-        th.join(timeout=2.0)
+        th.join(timeout=SHUTDOWN_JOIN_SEC)
         client.close()
+
+
+if __name__ == "__main__":
+    main()

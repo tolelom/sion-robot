@@ -1,12 +1,28 @@
 import logging
 from abc import ABC, abstractmethod
+from typing import Tuple
 
-from config import (K_OMEGA, SERVO_SPEED, SERVO_TIME, SERVO_INIT_ANGLES)
+from config import OMEGA_MIX_GAIN, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
 
 logger = logging.getLogger(__name__)
 
 
+def _clamp_unit(value: float) -> float:
+    return float(max(-1.0, min(1.0, value)))
+
+
+def mix_differential(v_norm: float, omega_norm: float, omega_gain: float = OMEGA_MIX_GAIN) -> Tuple[float, float]:
+    """(left, right) 바퀴 출력을 [-1, 1]로 돌려준다."""
+    v_norm = _clamp_unit(v_norm)
+    omega_norm = _clamp_unit(omega_norm)
+    left = _clamp_unit(v_norm - omega_gain * omega_norm)
+    right = _clamp_unit(v_norm + omega_gain * omega_norm)
+    return left, right
+
+
 class RobotBase(ABC):
+    """모든 값은 정규화 단위: v_norm, omega_norm ∈ [-1, 1]."""
+
     @abstractmethod
     def set_velocity(self, v_norm: float, omega_norm: float) -> None: ...
 
@@ -29,12 +45,7 @@ class JetankRobot(RobotBase):
         logger.info("JetankRobot ready")
 
     def set_velocity(self, v_norm: float, omega_norm: float) -> None:
-        v_norm = max(-1.0, min(1.0, v_norm))
-        omega_norm = max(-1.0, min(1.0, omega_norm))
-        left = v_norm - K_OMEGA * omega_norm
-        right = v_norm + K_OMEGA * omega_norm
-        left = float(max(-1.0, min(1.0, left)))
-        right = float(max(-1.0, min(1.0, right)))
+        left, right = mix_differential(v_norm, omega_norm)
         self._robot.set_motors(left, right)
 
     def stop(self) -> None:
@@ -62,6 +73,7 @@ class DummyRobot(RobotBase):
 
 
 def create_robot(dummy: bool = False) -> RobotBase:
+    # ImportError일 때만 더미로 대체한다. 시리얼 포트 등 실제 하드웨어 고장은 덮지 않고 전파한다.
     if dummy:
         return DummyRobot()
     try:
