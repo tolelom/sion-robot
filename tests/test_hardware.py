@@ -4,9 +4,8 @@ import types
 
 import pytest
 
-import config
-import hardware
-from hardware import DummyRobot, JetankRobot, create_robot, mix_differential
+from sion_robot import config, hardware
+from sion_robot.hardware import DummyRobot, JetankRobot, create_robot, mix_differential
 
 
 class TestMixDifferential:

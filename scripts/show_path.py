@@ -6,10 +6,10 @@ import json
 import logging
 from typing import List, Tuple
 
-from map_loader import load_map, cell_to_world
-from path_planner import plan_path_for_goal
-from path_utils import bresenham_line
-from config import INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS, MAP_FILE
+from sion_robot.map_loader import load_map, cell_to_world
+from sion_robot.path_planner import plan_path_for_goal
+from sion_robot.path_utils import bresenham_line
+from sion_robot.config import INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS, MAP_FILE
 
 logger = logging.getLogger(__name__)
 

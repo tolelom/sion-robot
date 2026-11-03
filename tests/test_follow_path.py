@@ -13,8 +13,8 @@ from typing import List, Tuple
 
 import pytest
 
-from follow_path import PoseEstimator, follow_path_constant_speed
-from hardware import RobotBase
+from sion_robot.follow_path import PoseEstimator, follow_path_constant_speed
+from sion_robot.hardware import RobotBase
 
 
 class TestPoseEstimator:
@@ -230,7 +230,7 @@ class TestInitialHeading:
 class TestEnemyGoal:
     @pytest.fixture(autouse=True)
     def _no_pauses(self, monkeypatch):
-        import follow_path
+        from sion_robot import follow_path
         monkeypatch.setattr(follow_path, "SERVO_ATTACK_PAUSE_SEC", 0.0)
         monkeypatch.setattr(follow_path, "SEGMENT_PAUSE_SEC", 0.0)
 
@@ -249,7 +249,7 @@ class TestEnemyGoal:
         )
 
     def test_last_segment_uses_charge_speed_then_attacks(self):
-        import config
+        from sion_robot import config
         robot = SpyRobot()
         _, _, th = self._run(robot)
         drive_speeds = [v for v, omega in robot.velocity_calls if omega == 0.0]
@@ -289,8 +289,8 @@ def test_drive_integrates_full_distance(step_sec):
 
 def test_enemy_action_pause_is_cancellable(monkeypatch):
     """회귀: 공격 후 대기(기본 2초×2) 중 취소되면 바로 끝나고, 팔 초기화 명령은 보낸다."""
-    import config
-    import follow_path
+    from sion_robot import config
+    from sion_robot import follow_path
 
     monkeypatch.setattr(follow_path, "SERVO_ATTACK_PAUSE_SEC", 30.0)
     monkeypatch.setattr(follow_path, "SEGMENT_PAUSE_SEC", 0.0)

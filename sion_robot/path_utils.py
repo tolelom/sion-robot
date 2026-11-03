@@ -6,8 +6,8 @@ line_of_sight와 bresenham_line은 오차 누적 방식이 달라 같은 두 점
 import math
 from typing import List, Tuple
 
-from config import MIN_CHARGE_CELLS
-from map_loader import CellType, MapData
+from .config import MIN_CHARGE_CELLS
+from .map_loader import CellType, MapData
 
 
 def line_of_sight(m: MapData,

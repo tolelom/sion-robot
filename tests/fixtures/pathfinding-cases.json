@@ -1,0 +1,159 @@
+{
+  "description": "격자 A* 동치 케이스. sion-api algorithms.Grid.FindPath와 sion-robot astar_normal이 이 결과를 내야 한다. expected가 null이면 경로가 없다. path는 같은 비용의 경로가 하나뿐일 때만 고정한다(두 구현의 타이 브레이킹이 다르다). sion-api는 양옆 칸이 모두 비어야 대각으로 움직이고, sion-robot은 팽창한 맵에서 계획하므로 막힌 모서리도 대각으로 지난다. 이 차이로 결과가 달라지는 케이스는 모서리를 지나는 구현의 기대값을 corner_cutting_expected에 둔다.",
+  "legend": {"#": "벽", ".": "빈 칸"},
+  "coordinates": "start·goal·path는 [x, y]이고 map[y][x]가 그 칸이다.",
+  "cases": [
+    {
+      "name": "straight corridor",
+      "map": [
+        "....."
+      ],
+      "start": [0, 0],
+      "goal": [4, 0],
+      "expected": {"cost": 4, "cells": 5, "path": [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]}
+    },
+    {
+      "name": "open diagonal",
+      "map": [
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        "....."
+      ],
+      "start": [0, 0],
+      "goal": [4, 4],
+      "expected": {"cost": 5.656854249, "cells": 5, "path": [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]]}
+    },
+    {
+      "name": "start equals goal",
+      "map": [
+        ".....",
+        ".....",
+        "....."
+      ],
+      "start": [2, 1],
+      "goal": [2, 1],
+      "expected": {"cost": 0, "cells": 1, "path": [[2, 1]]}
+    },
+    {
+      "name": "knight move",
+      "map": [
+        "...",
+        "..."
+      ],
+      "start": [0, 0],
+      "goal": [2, 1],
+      "expected": {"cost": 2.414213562, "cells": 3}
+    },
+    {
+      "name": "wall with an open gap",
+      "map": [
+        "...#...",
+        "...#...",
+        ".......",
+        "...#...",
+        "...#..."
+      ],
+      "start": [0, 0],
+      "goal": [6, 4],
+      "expected": {"cost": 7.656854249, "cells": 7}
+    },
+    {
+      "name": "detour around a wall end",
+      "map": [
+        ".......",
+        "..#....",
+        "..#....",
+        "..#....",
+        "..#...."
+      ],
+      "start": [0, 4],
+      "goal": [4, 4],
+      "expected": {"cost": 10.828427125, "cells": 11},
+      "corner_cutting_expected": {"cost": 9.656854249, "cells": 9}
+    },
+    {
+      "name": "u-shaped trap",
+      "map": [
+        "..........",
+        "..........",
+        "..#####...",
+        "......#...",
+        "......#...",
+        "..#####...",
+        ".........."
+      ],
+      "start": [4, 4],
+      "goal": [8, 4],
+      "expected": {"cost": 13.414213562, "cells": 14},
+      "corner_cutting_expected": {"cost": 11.656854249, "cells": 11}
+    },
+    {
+      "name": "goal enclosed",
+      "map": [
+        ".....",
+        ".....",
+        ".....",
+        "...##",
+        "...#."
+      ],
+      "start": [0, 0],
+      "goal": [4, 4],
+      "expected": null
+    },
+    {
+      "name": "goal on a wall",
+      "map": [
+        ".....",
+        ".....",
+        "...#.",
+        ".....",
+        "....."
+      ],
+      "start": [0, 0],
+      "goal": [3, 2],
+      "expected": null
+    },
+    {
+      "name": "diagonal squeeze between two walls",
+      "map": [
+        ".#",
+        "#."
+      ],
+      "start": [0, 0],
+      "goal": [1, 1],
+      "expected": null,
+      "corner_cutting_expected": {"cost": 1.414213562, "cells": 2, "path": [[0, 0], [1, 1]]}
+    },
+    {
+      "name": "diagonal past one wall",
+      "map": [
+        ".#.",
+        "...",
+        "..."
+      ],
+      "start": [0, 0],
+      "goal": [1, 1],
+      "expected": {"cost": 2, "cells": 3},
+      "corner_cutting_expected": {"cost": 1.414213562, "cells": 2, "path": [[0, 0], [1, 1]]}
+    },
+    {
+      "name": "rooms connected by a doorway",
+      "map": [
+        "............",
+        "....#.......",
+        "....#.......",
+        "....#.......",
+        "....######..",
+        "............",
+        "#######.....",
+        "............"
+      ],
+      "start": [0, 0],
+      "goal": [11, 7],
+      "expected": {"cost": 15.071067812, "cells": 14},
+      "corner_cutting_expected": {"cost": 14.485281374, "cells": 13}
+    }
+  ]
+}

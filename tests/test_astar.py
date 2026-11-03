@@ -7,8 +7,8 @@ import math
 
 import pytest
 
-from astar import DIRS_8, astar_enemy, astar_normal, plan_path
-from map_loader import CellType
+from sion_robot.astar import DIRS_8, astar_enemy, astar_normal, plan_path
+from sion_robot.map_loader import CellType
 from tests.conftest import make_map
 
 

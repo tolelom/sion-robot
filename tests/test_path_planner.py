@@ -2,7 +2,7 @@
 
 inflate → astar(normal/enemy) → smooth → (enemy면 charge segment 부착) 파이프라인 검증.
 """
-from path_planner import plan_path_for_goal
+from sion_robot.path_planner import plan_path_for_goal
 from tests.conftest import make_map
 
 
