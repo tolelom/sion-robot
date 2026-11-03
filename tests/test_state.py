@@ -165,3 +165,16 @@ class TestThreadSafety:
 
         # 정확히 한 스레드만 (5,5)를 받아야 한다
         assert winners == [(5, 5)]
+
+
+class TestTakeGoal:
+    def test_returns_goal_and_flag_and_clears(self):
+        s = AGVState()
+        s.set_goal_cell((1, 2))
+        s.set_enemy_goal(True)
+        assert s.take_goal() == ((1, 2), True)
+        assert s.get_goal_cell() is None
+        assert s.is_enemy_goal() is True  # 플래그는 그대로 둔다(consume_goal과 동일)
+
+    def test_empty(self):
+        assert AGVState().take_goal() == (None, False)
