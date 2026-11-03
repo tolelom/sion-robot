@@ -241,3 +241,47 @@ class TestInitialHeading:
 
     def test_single_waypoint_returns_theta0(self):
         assert follow_path_constant_speed(SpyRobot(), [(1.0, 2.0)], False, theta0=1.0) == (1.0, 2.0, 1.0)
+
+
+class TestEnemyGoal:
+    @pytest.fixture(autouse=True)
+    def _no_pauses(self, monkeypatch):
+        import follow_path
+        monkeypatch.setattr(follow_path, "SERVO_ATTACK_PAUSE_SEC", 0.0)
+        monkeypatch.setattr(follow_path, "SEGMENT_PAUSE_SEC", 0.0)
+
+    def _run(self, robot, cancel=None):
+        return follow_path_constant_speed(
+            robot,
+            [(0.0, 0.0), (0.01, 0.0), (0.02, 0.0)],
+            is_enemy_goal=True,
+            v_cruise_norm=0.5,
+            v_charge_norm=1.0,
+            omega_turn_norm=1.0,
+            scale_v_mps=1.0,
+            scale_omega_rad=1000.0,  # 공격 회전을 거의 즉시 끝낸다
+            step_sec=0.001,
+            cancel_event=cancel,
+        )
+
+    def test_last_segment_uses_charge_speed_then_attacks(self):
+        import config
+        robot = SpyRobot()
+        _, _, th = self._run(robot)
+        drive_speeds = [v for v, omega in robot.velocity_calls if omega == 0.0]
+        assert drive_speeds == [0.5, 1.0]
+        # 공격 회전(반시계) 후 HIT → 초기 자세 복귀 순서
+        assert robot.velocity_calls[-1][1] > 0
+        servo_angles = [(sid, angle) for sid, angle, _, _ in robot.servo_calls]
+        prep = [(sid, a) for sid, (a, _) in config.SERVO_ATTACK_PREP.items()]
+        hit = list(config.SERVO_ATTACK_HIT.items())
+        init = list(config.SERVO_INIT_ANGLES.items())
+        assert servo_angles == prep + hit + init
+        assert th > 0
+
+    def test_cancelled_before_start_skips_attack(self):
+        robot = SpyRobot()
+        cancel = threading.Event()
+        cancel.set()
+        self._run(robot, cancel)
+        assert robot.servo_calls == []
