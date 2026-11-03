@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# controller.py — 스레드 오케스트레이션 전담
-# 상태 관리는 AGVState, 모드 전환은 ModeManager에 위임
-
 import logging
 import math
 import os
@@ -24,29 +20,20 @@ from state import MODE_MANUAL, AGVState, Cell
 
 logger = logging.getLogger(__name__)
 
-# OpenCV는 카메라 keep-alive 스레드에만 필요하다. 없으면 카메라 스레드만 건너뛰고
-# 제어 루프는 그대로 돈다(데스크톱 + DummyRobot 실행용).
+# OpenCV가 없는 데스크톱(DummyRobot)에서도 제어 루프는 돌도록 카메라 스레드만 건너뛴다.
 try:
     import cv2
 except ImportError:  # pragma: no cover - 설치 여부에 따라 갈림
     cv2 = None
 
-MAIN_LOOP_SEC = 0.01           # 메인 루프 주기
-CAMERA_RETRY_SEC = 1.0         # 카메라 열기 실패·예외 후 재시도 대기
-CAMERA_READ_FAIL_SEC = 0.2     # 프레임 읽기 실패 후 재오픈 전 대기
-MOVE_JOIN_TIMEOUT_SEC = 2.0    # 종료 시 이동 스레드가 정지하기를 기다리는 시간
+MAIN_LOOP_SEC = 0.01
+CAMERA_RETRY_SEC = 1.0
+CAMERA_READ_FAIL_SEC = 0.2
+MOVE_JOIN_TIMEOUT_SEC = 2.0
 
-
-# =========================
-# CAMERA THREAD
-# =========================
 
 def camera_thread_main(stop_event: threading.Event) -> None:
-    """카메라 keep-alive 스레드. 실패해도 메인을 죽이지 않음.
-
-    데몬 스레드라 어떤 예외든 무는 것이 옳지만, 종류별로 메시지 강도를 다르게 한다.
-    예상되는 실패(cv2.error / OSError)는 warning, 그 외는 traceback과 함께 error.
-    """
+    """카메라 keep-alive. 어떤 예외도 삼키고 재시도해 메인 루프를 죽이지 않는다."""
     if cv2 is None:
         logger.warning("OpenCV(cv2) not installed — camera thread disabled")
         return
@@ -81,7 +68,6 @@ def camera_thread_main(stop_event: threading.Event) -> None:
 
 
 def _safe_release(cap) -> None:
-    """cv2 캡처 자원 해제. 실패해도 호출부를 깨지 않는다. 항상 None을 반환한다(cap = _safe_release(cap))."""
     if cap is None:
         return None
     try:
@@ -90,10 +76,6 @@ def _safe_release(cap) -> None:
         logger.debug("cap.release() failed: %s", release_err)
     return None
 
-
-# =========================
-# MOVE WORKER
-# =========================
 
 def move_worker(
     robot: RobotBase,
@@ -104,14 +86,9 @@ def move_worker(
     state: AGVState,
     cancel_event: Optional[threading.Event] = None,
 ) -> Cell:
-    """경로 계획 → 웨이포인트 변환 → follow_path 실행.
+    """이동 후 로봇이 있다고 볼 셀을 반환한다.
 
-    plan / follow 단계를 분리해 어느 단계에서 실패했는지 로그로 식별 가능하게 한다.
-    cancel_event가 set되면 follow_path가 즉시 정지하고 반환한다.
-
-    Returns:
-        이동이 끝난 뒤 로봇이 있다고 볼 셀. 계획 단계에서 실패하면 로봇은 움직이지 않았으므로
-        start_cell, 추종을 시작했으면 goal_cell(개루프 제어라 도착했다고 가정).
+    계획에 실패하면 움직이지 않았으니 start_cell, 추종을 시작했으면 개루프라 도착했다고 보고 goal_cell.
     """
     state.set_plan_result(False)
 
@@ -139,11 +116,6 @@ def move_worker(
     waypoints_world = [cell_to_world(x, y, m.resolution) for x, y in path_cells]
     state.set_plan_result(True)
 
-    # 직전 이동이 끝난 방향에서 출발한다. 0으로 두면 로봇이 실제로는 다른 방향을
-    # 보고 있는데도 동쪽을 본다고 가정해 첫 회전 각도가 틀어진다.
-    pose_world = state.get_pose_world()
-    theta0 = pose_world[2] if pose_world is not None else 0.0
-
     def pose_cb(px: float, py: float, ptheta: float) -> None:
         state.set_pose((px, py, ptheta), world_to_cell(px, py, m.resolution))
 
@@ -160,7 +132,7 @@ def move_worker(
             pose_update_cb=pose_cb,
             step_sec=MOTION_STEP_SEC,
             cancel_event=cancel_event,
-            theta0=theta0,
+            theta0=_last_heading(state),
         )
     except Exception as e:
         state.set_plan_result(False, f"follow exception: {e}")
@@ -168,14 +140,17 @@ def move_worker(
     return goal_cell
 
 
+def _last_heading(state: AGVState) -> float:
+    pose_world = state.get_pose_world()
+    return pose_world[2] if pose_world is not None else 0.0
+
+
 class MoveJob:
-    """move_worker를 데몬 스레드로 돌리고, 끝난 뒤 로봇이 있는 셀(end_cell)을 보관한다."""
 
     def __init__(self, robot: RobotBase, m: MapData, start_cell: Cell, goal_cell: Cell,
                  is_enemy_goal: bool, state: AGVState, cancel_event: threading.Event):
         self.start_cell = start_cell
         self.goal_cell = goal_cell
-        # 스레드가 끝나기 전에는 출발 셀에 있다고 본다.
         self.end_cell: Cell = start_cell
         self._args = (robot, m, start_cell, goal_cell, is_enemy_goal, state, cancel_event)
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -193,10 +168,6 @@ class MoveJob:
         self.thread.join(timeout)
 
 
-# =========================
-# MAIN
-# =========================
-
 def setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -211,7 +182,6 @@ def setup_logging() -> None:
 
 
 def init_state(m: MapData) -> AGVState:
-    """맵의 시작 위치로 포즈를 초기화한다. 적이 있으면 첫 적을 manual 모드 목표로 예약한다."""
     if m.start is None:
         raise RuntimeError("Start(S) not found in map")
 
@@ -238,14 +208,11 @@ def _log_pose(state: AGVState) -> None:
 
 
 def _shutdown(robot: RobotBase, move_th: Optional[MoveJob]) -> None:
-    """stop_event가 set된 뒤 호출: 이동 스레드가 모터를 멈추고 끝나기를 기다린 뒤 한 번 더 정지."""
-    # 진행 중인 follow가 cancel_event(stop_event)에 반응해 모터 정지 + 반환할 시간을 준다.
-    # daemon thread라 join 없이도 프로세스 종료에 묶이지만, robot.stop() 보장을 위해 join.
+    """stop_event를 set한 뒤 부른다. 이동 스레드가 취소에 반응해 모터를 멈출 시간을 주고 한 번 더 정지한다."""
     if move_th is not None and move_th.is_alive():
         move_th.join(timeout=MOVE_JOIN_TIMEOUT_SEC)
         if move_th.is_alive():
             logger.warning("move_th did not finish within %.0fs", MOVE_JOIN_TIMEOUT_SEC)
-    # 안전 차원에서 한 번 더 모터 정지 시도.
     try:
         robot.stop()
     except Exception:
@@ -276,16 +243,10 @@ def main() -> None:
             now = time.time()
             is_moving = move_th is not None and move_th.is_alive()
             if move_th is not None and not is_moving:
-                # 직전 이동이 끝났다. 계획 실패로 움직이지 않았으면 출발 셀 그대로다.
                 current_cell = move_th.end_cell
 
-            # 모드 매니저 틱 — 목표 상태 갱신
             mode_mgr.tick(current_cell, is_moving)
 
-            # 목표가 있으면 이동 시작.
-            # invariant: move_th는 한 번에 하나만 살아 있다. is_moving 가드(위에서 is_alive 확인)가
-            # 동시 실행을 막고, 이전 move_th 객체는 새 할당으로 해제되어 GC된다(데몬 스레드라
-            # 명시 join 불필요). 새 goal은 이전 follow가 자연 종료된 다음 cycle에 picked up된다.
             if not is_moving:
                 goal_cell, is_enemy = state.take_goal()
                 if goal_cell is not None:
