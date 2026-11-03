@@ -53,6 +53,7 @@ flowchart LR
 | `config.py` | 속도, 팽창 반경, 서보 각도 등 상수. 맵 경로는 저장소 기준 절대 경로 |
 | `scripts/` | 보조 스크립트: 맵·경로 시각화(`show_map`, `show_path`), 맵 생성(`generate_smallroom_map`), 모터 캘리브레이션(`calib_motion`), 모터 동작 확인(`motor_smoke_test`) |
 | `tests/` | pytest 단위·통합 테스트. `conftest.py`의 `make_map`으로 문자열 격자에서 맵을 만든다. 하드웨어 없이 돈다 |
+| `tests/fixtures/pathfinding-cases.json` | sion-api `contract/pathfinding-cases.json`의 복사본. `astar_normal`과 sion-api A*가 같이 통과해야 하는 케이스 |
 
 ## 실행
 
@@ -81,3 +82,13 @@ python controller.py
 | `python -m scripts.motor_smoke_test` | 1초 전진 후 정지(실기) |
 
 CI는 push마다 pytest를 커버리지 하한과 함께 돌린다.
+
+A* 케이스는 sion-api가 주인이다. 바뀌면 복사해 온다.
+
+```bash
+cp ../sion-api/contract/pathfinding-cases.json tests/fixtures/
+# 또는
+curl -fsSL https://raw.githubusercontent.com/tolelom/sion-api/main/contract/pathfinding-cases.json -o tests/fixtures/pathfinding-cases.json
+```
+
+sion-api는 양옆 칸이 모두 비어야 대각으로 움직이고 이 저장소는 막힌 모서리도 대각으로 지난다(팽창한 맵에서 계획한다). 결과가 갈리는 케이스는 `corner_cutting_expected`에 이 저장소의 기대값이 있다.

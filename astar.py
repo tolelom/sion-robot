@@ -1,7 +1,8 @@
 """로봇 측 A* 경로 계획기.
 
-sion-api/algorithms/astar.go(웹 시뮬레이터용 일반 A*)와 휴리스틱·8방향 비용이 같아야 한다.
-웹 API는 셀 타입을 넘기지 않아 회전 최소화 변형(astar_enemy)은 이식하지 않았다.
+astar_normal은 sion-api algorithms/astar.go와 tests/fixtures/pathfinding-cases.json을 같이 통과해야 한다.
+팽창한 맵에서 계획하므로 막힌 모서리도 대각으로 지난다는 점만 다르다.
+회전 최소화 변형(astar_enemy)은 sion-api에 없다.
 """
 import heapq
 import itertools
