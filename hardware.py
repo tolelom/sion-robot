@@ -1,12 +1,29 @@
+"""로봇 하드웨어 추상화: RobotBase 인터페이스와 JETANK·더미 구현."""
 import logging
 from abc import ABC, abstractmethod
+from typing import Tuple
 
-from config import (K_OMEGA, SERVO_SPEED, SERVO_TIME, SERVO_INIT_ANGLES)
+from config import K_OMEGA, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
 
 logger = logging.getLogger(__name__)
 
 
+def _clamp_unit(value: float) -> float:
+    return float(max(-1.0, min(1.0, value)))
+
+
+def mix_differential(v_norm: float, omega_norm: float, k_omega: float = K_OMEGA) -> Tuple[float, float]:
+    """정규화된 (선속도, 각속도)를 좌·우 바퀴 출력 [-1, 1]로 바꾼다(차동 구동)."""
+    v_norm = _clamp_unit(v_norm)
+    omega_norm = _clamp_unit(omega_norm)
+    left = _clamp_unit(v_norm - k_omega * omega_norm)
+    right = _clamp_unit(v_norm + k_omega * omega_norm)
+    return left, right
+
+
 class RobotBase(ABC):
+    """모든 값은 정규화 단위: v_norm, omega_norm ∈ [-1, 1]."""
+
     @abstractmethod
     def set_velocity(self, v_norm: float, omega_norm: float) -> None: ...
 
@@ -29,12 +46,7 @@ class JetankRobot(RobotBase):
         logger.info("JetankRobot ready")
 
     def set_velocity(self, v_norm: float, omega_norm: float) -> None:
-        v_norm = max(-1.0, min(1.0, v_norm))
-        omega_norm = max(-1.0, min(1.0, omega_norm))
-        left = v_norm - K_OMEGA * omega_norm
-        right = v_norm + K_OMEGA * omega_norm
-        left = float(max(-1.0, min(1.0, left)))
-        right = float(max(-1.0, min(1.0, right)))
+        left, right = mix_differential(v_norm, omega_norm)
         self._robot.set_motors(left, right)
 
     def stop(self) -> None:
@@ -62,6 +74,11 @@ class DummyRobot(RobotBase):
 
 
 def create_robot(dummy: bool = False) -> RobotBase:
+    """JETANK 하드웨어를 연다. jetbot/SCSCtrl을 import할 수 없으면 DummyRobot으로 대체한다.
+
+    import 이외의 초기화 실패(시리얼 포트 등)는 그대로 전파한다 — 실제 로봇에서
+    하드웨어 고장을 더미로 조용히 덮지 않기 위해서다.
+    """
     if dummy:
         return DummyRobot()
     try:
