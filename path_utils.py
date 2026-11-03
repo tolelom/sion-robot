@@ -1,13 +1,17 @@
-# path_utils.py
+# path_utils.py — 격자 경로 후처리 유틸 (시야선, 평활화, 장애물 팽창, 직선 셀, 돌진 구간)
+#
+# 주의: line_of_sight와 bresenham_line은 둘 다 Bresenham 계열이지만 오차 누적 방식이 달라
+# 같은 두 점에 대해 지나는 셀이 다를 수 있다. 평활화·돌진 판정 결과가 바뀌므로 함부로 합치지 않는다.
 
 import math
 from typing import List, Tuple
 
-from map_loader import MapData, CellType
+from config import MIN_CHARGE_CELLS
+from map_loader import CellType, MapData
 
 
 # ----------------------------------------------------
-# 1. a->b 직선에 장애물이 끼는지 체크 (이미 있었던 코드)
+# 1. a->b 직선에 장애물이 끼는지 체크
 # ----------------------------------------------------
 def line_of_sight(m: MapData,
                   a: Tuple[int, int],
@@ -179,7 +183,7 @@ def bresenham_line(a: Tuple[int, int],
 def attach_charge_segment(
     m_orig: MapData,
     smooth_path: List[Tuple[int, int]],
-    min_charge_cells: int = 8,   # 직선 돌진 최소 길이 (셀 단위)
+    min_charge_cells: int = MIN_CHARGE_CELLS,   # 직선 돌진 최소 길이 (셀 단위)
 ) -> List[Tuple[int, int]]:
     """
     스무딩된 경로의 마지막 부분을 'goal로 향하는 직선' 구간으로 교체.
