@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
-from map_loader import CellType, MapData
+from .map_loader import CellType, MapData
 
 Cell = Tuple[int, int]
 

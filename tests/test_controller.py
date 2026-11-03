@@ -4,9 +4,9 @@ from typing import List, Tuple
 
 import pytest
 
-import controller
-from hardware import RobotBase
-from state import AGVState
+from sion_robot import controller
+from sion_robot.hardware import RobotBase
+from sion_robot.state import AGVState
 from tests.conftest import make_map
 
 

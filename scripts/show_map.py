@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-from config import BASE_DIR
+from sion_robot.config import BASE_DIR
 
 DEFAULT_MAP = os.path.join(BASE_DIR, "map_jetank_60x60.json")
 

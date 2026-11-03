@@ -9,9 +9,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import mode_manager as mode_manager_module
-from mode_manager import ModeManager
-from state import AGVState
+from sion_robot import mode_manager as mode_manager_module
+from sion_robot.mode_manager import ModeManager
+from sion_robot.state import AGVState
 from tests.conftest import make_map
 
 
@@ -197,7 +197,7 @@ class TestPickRandomGoal:
     def test_skips_start_cell(self, mocker, mm):
         # plan_path_for_goal를 호출하지 않더라도, start_cell과 같은 셀은 건너뛰어야 한다.
         # 항상 동일 셀이 뽑히도록 random.randint를 패치.
-        mocker.patch("mode_manager.random.randint", return_value=0)
+        mocker.patch("sion_robot.mode_manager.random.randint", return_value=0)
         # plan_path_for_goal가 호출되면 안 됨 (전부 start와 동일)
         plan_spy = mocker.patch.object(
             mode_manager_module, "plan_path_for_goal",

@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from state import AGVState
+from sion_robot.state import AGVState
 
 
 class TestStateDefaults:

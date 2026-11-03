@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Tuple
 
-from config import OMEGA_MIX_GAIN, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
+from .config import OMEGA_MIX_GAIN, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
 
 logger = logging.getLogger(__name__)
 

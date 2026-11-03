@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from astar import astar_normal
+from sion_robot.astar import astar_normal
 from tests.conftest import make_map
 
 CASES_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "pathfinding-cases.json")
