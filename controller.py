@@ -101,11 +101,15 @@ def move_worker(
     is_enemy_goal: bool,
     state: AGVState,
     cancel_event: Optional[threading.Event] = None,
-) -> None:
+) -> Cell:
     """경로 계획 → 웨이포인트 변환 → follow_path 실행.
 
     plan / follow 단계를 분리해 어느 단계에서 실패했는지 로그로 식별 가능하게 한다.
     cancel_event가 set되면 follow_path가 즉시 정지하고 반환한다.
+
+    Returns:
+        이동이 끝난 뒤 로봇이 있다고 볼 셀. 계획 단계에서 실패하면 로봇은 움직이지 않았으므로
+        start_cell, 추종을 시작했으면 goal_cell(개루프 제어라 도착했다고 가정).
     """
     state.set_plan_result(False)
 
@@ -121,12 +125,12 @@ def move_worker(
     except Exception as e:
         state.set_plan_result(False, f"plan exception: {e}")
         logger.exception("move_worker: plan_path_for_goal failed")
-        return
+        return start_cell
 
     if path_cells is None:
         state.set_plan_result(False, "No path found")
         logger.warning("No path found")
-        return
+        return start_cell
 
     for cx, cy in path_cells:
         logger.debug("  cell (%2d,%2d)", cx, cy)
@@ -153,6 +157,32 @@ def move_worker(
     except Exception as e:
         state.set_plan_result(False, f"follow exception: {e}")
         logger.exception("move_worker: follow_path_constant_speed failed")
+    return goal_cell
+
+
+class MoveJob:
+    """move_worker를 데몬 스레드로 돌리고, 끝난 뒤 로봇이 있는 셀(end_cell)을 보관한다."""
+
+    def __init__(self, robot: RobotBase, m: MapData, start_cell: Cell, goal_cell: Cell,
+                 is_enemy_goal: bool, state: AGVState, cancel_event: threading.Event):
+        self.start_cell = start_cell
+        self.goal_cell = goal_cell
+        # 스레드가 끝나기 전에는 출발 셀에 있다고 본다.
+        self.end_cell: Cell = start_cell
+        self._args = (robot, m, start_cell, goal_cell, is_enemy_goal, state, cancel_event)
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        self.end_cell = move_worker(*self._args)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def is_alive(self) -> bool:
+        return self.thread.is_alive()
+
+    def join(self, timeout: Optional[float] = None) -> None:
+        self.thread.join(timeout)
 
 
 # =========================
@@ -199,7 +229,7 @@ def _log_pose(state: AGVState) -> None:
         logger.debug("pose is None")
 
 
-def _shutdown(robot: RobotBase, move_th: Optional[threading.Thread]) -> None:
+def _shutdown(robot: RobotBase, move_th: Optional[MoveJob]) -> None:
     """stop_event가 set된 뒤 호출: 이동 스레드가 모터를 멈추고 끝나기를 기다린 뒤 한 번 더 정지."""
     # 진행 중인 follow가 cancel_event(stop_event)에 반응해 모터 정지 + 반환할 시간을 준다.
     # daemon thread라 join 없이도 프로세스 종료에 묶이지만, robot.stop() 보장을 위해 join.
@@ -229,7 +259,7 @@ def main() -> None:
     cam_th = threading.Thread(target=camera_thread_main, args=(stop_event,), daemon=True)
     cam_th.start()
 
-    move_th: Optional[threading.Thread] = None
+    move_th: Optional[MoveJob] = None
     last_pose_print = 0.0
 
     logger.info("Enter loop (Ctrl+C to stop)")
@@ -237,6 +267,9 @@ def main() -> None:
         while True:
             now = time.time()
             is_moving = move_th is not None and move_th.is_alive()
+            if move_th is not None and not is_moving:
+                # 직전 이동이 끝났다. 계획 실패로 움직이지 않았으면 출발 셀 그대로다.
+                current_cell = move_th.end_cell
 
             # 모드 매니저 틱 — 목표 상태 갱신
             mode_mgr.tick(current_cell, is_moving)
@@ -248,13 +281,8 @@ def main() -> None:
             if not is_moving:
                 goal_cell, is_enemy = state.take_goal()
                 if goal_cell is not None:
-                    move_th = threading.Thread(
-                        target=move_worker,
-                        args=(robot, m, current_cell, goal_cell, is_enemy, state, stop_event),
-                        daemon=True,
-                    )
+                    move_th = MoveJob(robot, m, current_cell, goal_cell, is_enemy, state, stop_event)
                     move_th.start()
-                    current_cell = goal_cell
 
             if now - last_pose_print >= POSE_PERIOD_SEC:
                 _log_pose(state)
