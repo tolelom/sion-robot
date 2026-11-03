@@ -1,6 +1,3 @@
-# state.py — 공유 상태 전담 클래스
-# 모든 스레드는 이 클래스의 메서드를 통해서만 상태를 읽고 씀
-
 import threading
 from typing import Any, Dict, Optional, Tuple
 
@@ -13,10 +10,7 @@ WorldPose = Tuple[float, float, float]  # (x[m], y[m], theta[rad])
 
 
 class AGVState:
-    """
-    스레드 안전 공유 상태.
-    직접 dict 접근 대신 get_*/set_* 메서드만 사용할 것.
-    """
+    """스레드 간 공유 상태. 모든 접근은 lock을 잡는 메서드로만 한다."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -65,7 +59,6 @@ class AGVState:
             return dict(self._state)
 
     def set_mode(self, mode: str) -> None:
-        # assert는 python -O에서 사라지므로 명시적으로 검사한다.
         if mode not in VALID_MODES:
             raise ValueError(f"Invalid mode: {mode!r}")
         with self._lock:
@@ -112,11 +105,8 @@ class AGVState:
             return goal
 
     def take_goal(self) -> Tuple[Optional[Cell], bool]:
-        """목표와 적 여부를 한 번의 lock 안에서 읽고 목표를 비운다.
-
-        consume_goal()과 is_enemy_goal()을 따로 부르면 그 사이에 다른 스레드가
-        목표/플래그를 바꿔 짝이 어긋날 수 있다.
-        """
+        # consume_goal()과 is_enemy_goal()을 따로 부르면 그 사이 다른 스레드가 바꿔 짝이 어긋날 수 있어
+        # 한 번의 lock 안에서 함께 읽는다.
         with self._lock:
             goal = self._state["goal_cell"]
             self._state["goal_cell"] = None

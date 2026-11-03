@@ -22,13 +22,12 @@ class MapData:
         self.width = width
         self.height = height
         self.resolution = resolution
-        self.grid = grid          # grid[y][x]
-        self.start = start        # (x, y) or None
-        self.enemies = enemies    # list of (x, y)
+        self.grid = grid  # grid[y][x]
+        self.start = start
+        self.enemies = enemies
 
 
 def load_map(path: str) -> MapData:
-    """JSON 맵 파일을 읽어서 MapData로 변환"""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -37,7 +36,6 @@ def load_map(path: str) -> MapData:
     res = data["resolution"]
     rows = data["cells"]
 
-    # assert는 python -O 실행 시 사라지므로 정상 경로 검증에는 적절하지 않다. raise로 항상 검증.
     if len(rows) != height:
         raise ValueError(f"height mismatch: declared={height}, actual={len(rows)}")
 
@@ -56,7 +54,6 @@ def load_map(path: str) -> MapData:
                 cell = CellType.ENEMY
                 enemies.append((x, y))
             else:
-                # '.', 'S' 등은 모두 EMPTY 취급
                 cell = CellType.EMPTY
                 if ch == "S":
                     start = (x, y)
@@ -66,23 +63,20 @@ def load_map(path: str) -> MapData:
     return MapData(width, height, res, grid, start, enemies)
 
 
-# 셀 <-> 월드 좌표 변환 (미터 단위)
 def cell_to_world(x_idx: int, y_idx: int, res: float) -> Tuple[float, float]:
-    """셀 인덱스(x,y)를 실제 좌표(m)로 변환. 셀 중심 기준."""
+    """셀 중심의 월드 좌표(m)."""
     x = (x_idx + 0.5) * res
     y = (y_idx + 0.5) * res
     return x, y
 
 
 def world_to_cell(x: float, y: float, res: float) -> Tuple[int, int]:
-    """실제 좌표(m)를 셀 인덱스(x,y)로 변환."""
     x_idx = int(x // res)
     y_idx = int(y // res)
     return x_idx, y_idx
 
 
 if __name__ == "__main__":
-    # 간단 테스트
     import sys
 
     filename = sys.argv[1] if len(sys.argv) > 1 else "map_jetank_60x60.json"
