@@ -11,10 +11,6 @@ import threading
 import time
 from typing import Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-import cv2
-
 from follow_path import follow_path_constant_speed
 from map_loader import MapData, cell_to_world, load_map, world_to_cell
 from config import (MAP_FILE, POSE_PERIOD_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS,
@@ -24,6 +20,15 @@ from hardware import create_robot, RobotBase
 from mode_manager import ModeManager
 from path_planner import plan_path_for_goal
 from state import AGVState
+
+logger = logging.getLogger(__name__)
+
+# OpenCV는 카메라 keep-alive 스레드에만 필요하다. 없으면 카메라 스레드만 건너뛰고
+# 제어 루프는 그대로 돈다(데스크톱 + DummyRobot 실행용).
+try:
+    import cv2
+except ImportError:  # pragma: no cover - 설치 여부에 따라 갈림
+    cv2 = None
 
 
 # =========================
@@ -36,6 +41,9 @@ def camera_thread_main(stop_event: threading.Event) -> None:
     데몬 스레드라 어떤 예외든 무는 것이 옳지만, 종류별로 메시지 강도를 다르게 한다.
     예상되는 실패(cv2.error / OSError)는 warning, 그 외는 traceback과 함께 error.
     """
+    if cv2 is None:
+        logger.warning("OpenCV(cv2) not installed — camera thread disabled")
+        return
     logger.info("thread start")
     cap = None
     while not stop_event.is_set():
