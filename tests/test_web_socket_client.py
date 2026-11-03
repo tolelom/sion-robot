@@ -275,3 +275,94 @@ class TestMalformedMessageDoesNotBreakConnection:
         raw = json.dumps({"type": "command", "data": {"target_x": 1, "target_y": 2}})
         asyncio.run(client._handle_message_safely(raw))  # raise하지 않아야 한다
         client.execute_move_command.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 재연결 루프와 close()
+# ---------------------------------------------------------------------------
+
+class TestReconnectAndClose:
+    def test_close_interrupts_backoff(self, client, monkeypatch):
+        attempts = []
+
+        def failing_connect(url):
+            attempts.append(url)
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(wsc.websockets, "connect", failing_connect)
+        # 백오프를 길게 잡아, close()가 대기를 깨우지 못하면 테스트가 확실히 실패하게 한다.
+        monkeypatch.setattr(wsc, "INITIAL_RECONNECT_BACKOFF_SEC", 60.0)
+
+        assert client.start(timeout=0.2) is False
+        assert attempts, "최소 한 번은 연결을 시도해야 한다"
+
+        client.close(timeout=2.0)
+        assert not client.receive_thread.is_alive()
+        assert client.loop is None
+        assert len(attempts) == 1
+
+    def test_close_before_start_is_safe(self, client):
+        client.close()
+        assert client.connected is False
+
+    def test_start_twice_does_not_spawn_second_thread(self, client, monkeypatch):
+        gate = threading.Event()
+        monkeypatch.setattr(client, "_run_async_loop", lambda: gate.wait(2.0))
+        client.start(timeout=0.01)
+        first = client.receive_thread
+        client.start(timeout=0.01)
+        assert client.receive_thread is first
+        gate.set()
+
+
+class _FakeConnection:
+    """websockets.connect(...)가 돌려주는 async context manager 흉내."""
+
+    def __init__(self, incoming: List[str]):
+        self._incoming = list(incoming)
+        self._closed = None  # loop 안에서 생성
+        self.sent: List[str] = []
+
+    async def __aenter__(self):
+        self._closed = asyncio.Event()
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def __aiter__(self):
+        return self._iter()
+
+    async def _iter(self):
+        for m in self._incoming:
+            yield m
+        await self._closed.wait()  # 서버가 메시지를 더 안 보내고 연결만 유지하는 상태
+
+    async def send(self, message: str) -> None:
+        self.sent.append(message)
+
+    async def close(self) -> None:
+        self._closed.set()
+
+
+class TestConnectedLifecycle:
+    def test_receive_send_close(self, client, monkeypatch):
+        conn = _FakeConnection([json.dumps({"type": "mode_change", "data": {"mode": "manual"}})])
+        monkeypatch.setattr(wsc.websockets, "connect", lambda url: conn)
+        received = threading.Event()
+
+        async def on_mode(mode):
+            assert mode == "manual"
+            received.set()
+
+        monkeypatch.setattr(client, "change_mode", on_mode)
+
+        assert client.start(timeout=1.0) is True
+        assert received.wait(1.0)
+
+        client.send_log("hi")
+        assert json.loads(conn.sent[0])["type"] == "log"
+
+        client.close(timeout=2.0)
+        assert not client.receive_thread.is_alive()
+        assert client.connected is False

@@ -17,6 +17,7 @@ DEFAULT_START_TIMEOUT_SEC = 5.0
 DEFAULT_SEND_TIMEOUT_SEC = 1.0
 INITIAL_RECONNECT_BACKOFF_SEC = 1.0
 MAX_RECONNECT_BACKOFF_SEC = 30.0
+DEFAULT_CLOSE_TIMEOUT_SEC = 2.0
 
 
 def resolve_backend_ws_url(explicit: Optional[str] = None) -> str:
@@ -38,9 +39,10 @@ class AGVWebSocketClient:
         self.server_url = resolve_backend_ws_url(server_url)
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self._connected_event = threading.Event()
-        # close()가 호출되면 set된다. _connect_and_listen 루프는 이 이벤트를 보고
-        # 백오프 대기 후 종료한다. 다음 cycle 진입 직전과 백오프 sleep 직후 폴링.
+        # close()가 호출되면 set된다(어느 스레드에서든 읽을 수 있는 종료 플래그).
         self._stop_requested = threading.Event()
+        # 백오프 대기를 즉시 깨우기 위한 loop 내부 이벤트. loop 스레드에서 만든다.
+        self._wakeup: Optional[asyncio.Event] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.receive_thread: Optional[threading.Thread] = None
 
@@ -62,8 +64,12 @@ class AGVWebSocketClient:
             True: timeout 안에 연결 성공.
             False: timeout 초과. 호출자가 폴백을 결정한다(메모: "통신 안되면 그냥 이동 -> 영상").
         """
-        self.receive_thread = threading.Thread(target=self._run_async_loop, daemon=True)
-        self.receive_thread.start()
+        if self.receive_thread is not None and self.receive_thread.is_alive():
+            # 두 번 부르면 연결 스레드가 둘 생겨 같은 서버에 중복 접속한다.
+            logger.warning("start()가 이미 호출됨 — 기존 연결 스레드를 그대로 쓴다")
+        else:
+            self.receive_thread = threading.Thread(target=self._run_async_loop, daemon=True)
+            self.receive_thread.start()
 
         if not self._connected_event.wait(timeout=timeout):
             logger.warning("Web Socket 연결 timeout(%ss): %s", timeout, self.server_url)
@@ -73,9 +79,14 @@ class AGVWebSocketClient:
         return True
 
     def _run_async_loop(self):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._connect_and_listen())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self.loop = loop
+        try:
+            loop.run_until_complete(self._connect_and_listen())
+        finally:
+            self.loop = None
+            loop.close()
 
     async def _connect_and_listen(self):
         """연결 → 메시지 루프 → 단절 시 백오프 재시도를 close()까지 반복한다.
@@ -83,10 +94,14 @@ class AGVWebSocketClient:
         백오프: 1s → 2 → 4 → 8 → 16 → 30(max). 연결 성공 시 리셋.
         무한 재시도가 의도(운영 중 backend 재시작에도 자동 복구). 종료는 close() 호출로.
         """
+        self._wakeup = asyncio.Event()
         backoff = INITIAL_RECONNECT_BACKOFF_SEC
         while not self._stop_requested.is_set():
             try:
                 async with websockets.connect(self.server_url) as websocket:
+                    if self._stop_requested.is_set():
+                        # 핸드셰이크 도중 close()가 불린 경우. 연결을 쓰지 않고 바로 닫는다.
+                        break
                     self.websocket = websocket
                     self._connected_event.set()
                     # 성공 시 백오프 리셋. 다음 단절 후 재시도는 다시 1s부터.
@@ -97,7 +112,7 @@ class AGVWebSocketClient:
                         await self._handle_message_safely(message)
 
             except websockets.exceptions.ConnectionClosed as e:
-                logger.warning("WebSocket 연결 종료: code=%s reason=%s", e.code, e.reason)
+                logger.warning("WebSocket 연결 종료: %s", e)
             except (websockets.exceptions.WebSocketException, OSError) as e:
                 logger.warning("WebSocket 네트워크 오류: %s", e)
             except Exception:
@@ -110,13 +125,29 @@ class AGVWebSocketClient:
                 break
 
             logger.info("재연결까지 %.1fs 대기", backoff)
-            try:
-                await asyncio.sleep(backoff)
-            except asyncio.CancelledError:
+            if await self._wait_for_stop(backoff):
                 break
             backoff = min(backoff * 2, MAX_RECONNECT_BACKOFF_SEC)
 
+        self._connected_event.clear()
+        self.websocket = None
         logger.info("WebSocket loop 종료")
+
+    async def _wait_for_stop(self, timeout: float) -> bool:
+        """최대 timeout초 대기. 그 사이 close()가 불리면 즉시 True를 반환한다."""
+        try:
+            await asyncio.wait_for(self._wakeup.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return self._stop_requested.is_set()
+        return True
+
+    async def _shutdown(self) -> None:
+        """loop 스레드에서 실행: 백오프 대기를 깨우고 열린 연결을 닫는다."""
+        if self._wakeup is not None:
+            self._wakeup.set()
+        websocket = self.websocket
+        if websocket is not None:
+            await websocket.close()
 
     async def _handle_message_safely(self, message: str) -> None:
         """메시지 한 건 처리 중 예외가 수신 루프(=연결)까지 끊지 않게 격리한다."""
@@ -169,7 +200,10 @@ class AGVWebSocketClient:
         future.result()는 timeout/연결 종료/직렬화 등 다양한 사유로 raise할 수 있는데,
         한 호출 실패가 send_loop 스레드를 죽이지 않게 모두 잡아 로그만 남긴다.
         """
-        if not self.connected or not self.websocket or not self.loop:
+        # 다른 스레드(loop)가 언제든 None으로 바꿀 수 있으므로 지역 변수로 한 번만 읽는다.
+        websocket = self.websocket
+        loop = self.loop
+        if not self.connected or websocket is None or loop is None:
             logger.warning("Web Socket이 연결되지 않았습니다.")
             return
 
@@ -181,8 +215,8 @@ class AGVWebSocketClient:
 
         try:
             future = asyncio.run_coroutine_threadsafe(
-                self.websocket.send(json.dumps(message)),
-                self.loop,
+                websocket.send(json.dumps(message)),
+                loop,
             )
             future.result(timeout=DEFAULT_SEND_TIMEOUT_SEC)
         except Exception as e:
@@ -300,20 +334,27 @@ class AGVWebSocketClient:
     def update_speed(self, speed: float):
         self.speed = speed
 
-    def close(self):
-        """명시적 종료 신호. _connect_and_listen 루프가 다음 cycle에서 break한다.
+    def close(self, timeout: Optional[float] = DEFAULT_CLOSE_TIMEOUT_SEC) -> None:
+        """명시적 종료. 연결 중이면 연결을 닫고, 백오프 대기 중이면 즉시 깨워 루프를 끝낸다.
 
-        진행 중인 websocket이 있으면 close해서 ConnectionClosed로 루프를 즉시 깨운다.
-        백오프 sleep 중이면 그 sleep이 끝날 때까지 대기(최대 MAX_RECONNECT_BACKOFF_SEC).
+        timeout이 None이 아니면 연결 스레드가 끝나기를 최대 timeout초 기다린다.
         """
         self._stop_requested.set()
-        if self.websocket and self.loop:
-            asyncio.run_coroutine_threadsafe(
-                self.websocket.close(),
-                self.loop,
-            )
+        loop = self.loop
+        if loop is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+            except RuntimeError:
+                # loop가 이미 닫힌 경우(스레드 종료 직후 경합). 깨울 대상이 없으므로 무시.
+                logger.debug("close(): event loop already closed")
         self._connected_event.clear()
         logger.info("WebSocket 연결 종료 요청")
+
+        th = self.receive_thread
+        if timeout is not None and th is not None and th is not threading.current_thread():
+            th.join(timeout=timeout)
+            if th.is_alive():
+                logger.warning("WebSocket 스레드가 %.1fs 안에 끝나지 않음", timeout)
 
     async def execute_move_command(self, target_x, target_y, mode):
         logger.info("이동: (%s, %s)", target_x, target_y)
