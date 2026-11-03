@@ -366,3 +366,20 @@ class TestConnectedLifecycle:
         client.close(timeout=2.0)
         assert not client.receive_thread.is_alive()
         assert client.connected is False
+
+
+class TestPureHelpers:
+    def test_next_backoff_doubles_and_caps(self):
+        seq = [wsc.INITIAL_RECONNECT_BACKOFF_SEC]
+        for _ in range(7):
+            seq.append(wsc.next_backoff(seq[-1]))
+        assert seq[:6] == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
+        assert all(b == wsc.MAX_RECONNECT_BACKOFF_SEC for b in seq[5:])
+
+    def test_default_sensors_is_fresh_dict(self):
+        a = wsc.default_sensors()
+        a["camera_active"] = True
+        assert wsc.default_sensors()["camera_active"] is False
+
+    def test_path_length_single_point(self):
+        assert wsc.path_length([{"x": 1.0, "y": 1.0}]) == 0.0
