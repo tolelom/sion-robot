@@ -75,7 +75,7 @@ def main():
     logger.info("Used enemy mode: %s", used_enemy_mode)
     logger.info("Final path length (cells): %d", len(path))
 
-    with open(MAP_FILE, "r") as f:
+    with open(MAP_FILE, "r", encoding="utf-8") as f:
         raw = json.load(f)
         cells = raw["cells"]
 
