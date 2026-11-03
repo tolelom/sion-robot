@@ -1,7 +1,7 @@
 """pytest 공통 fixture.
 
-sion/ 디렉토리의 모듈들은 `from map_loader import ...` 처럼 상대 import를 쓰므로
-sys.path에 sion/ 디렉토리를 추가해 테스트에서도 같은 import가 동작하도록 한다.
+저장소 루트의 모듈들은 `from map_loader import ...` 처럼 최상위 import를 쓰므로
+sys.path에 저장소 루트를 추가해 테스트에서도 같은 import가 동작하도록 한다.
 """
 import os
 import sys

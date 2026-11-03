@@ -29,11 +29,12 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: pytest 실행 (+커버리지)
-        # 로봇 모듈은 sion/ 디렉토리에 있고 상대 import를 쓰므로 cwd가 sion이어야 한다.
-        # (conftest.py가 sys.path에 .을 끼워 넣어 import를 풀어준다.)
+        # 로봇 모듈은 저장소 루트에 평평하게 있고 `from map_loader import ...`처럼 import하므로
+        # cwd가 저장소 루트여야 한다. (tests/conftest.py가 sys.path에 루트를 끼워 넣는다.)
         run: |
           python -m pytest tests/ \
             --cov=astar --cov=path_utils --cov=map_loader \
             --cov=state --cov=mode_manager --cov=follow_path --cov=path_planner \
+            --cov=controller --cov=hardware --cov=tolelom \
             --cov-report=term \
             --cov-fail-under=80
