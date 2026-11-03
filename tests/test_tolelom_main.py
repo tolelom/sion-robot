@@ -111,3 +111,20 @@ class TestSendLoop:
 @pytest.mark.parametrize("fn", [ws_main.get_status, ws_main.get_path_points])
 def test_placeholder_sources_return_data(fn):
     assert fn()
+
+
+def test_send_loop_survives_source_exception(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky_position():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("odometry not ready")
+        return 1.0, 2.0, 0.0
+
+    monkeypatch.setattr(ws_main, "get_position", flaky_position)
+    client = FakeClient()
+    _run_loop_for(client, 0.2, pos_period=0.02, status_period=10.0, path_period=10.0, box=queue.Queue())
+    # 첫 호출이 실패해도 루프가 살아남아 이후 position을 보낸다.
+    assert calls["n"] >= 2
+    assert ("position", (1.0, 2.0, 0.0)) in client.calls

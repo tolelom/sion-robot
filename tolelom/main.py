@@ -129,25 +129,35 @@ def send_loop(
 
         now = time.monotonic()
 
-        if now >= next_pos:
-            x, y, angle = get_position()
-            client.send_position(x, y, angle)
-            next_pos += pos_period
+        # 데이터 소스(get_*)나 전송에서 난 예외 한 번에 송신 스레드가 죽으면, 메인 스레드는
+        # 살아 있는데 아무것도 보내지 않는 상태가 된다. 사이클 단위로 격리하고 다음 주기로 넘어간다.
+        try:
+            if now >= next_pos:
+                next_pos += pos_period
+                x, y, angle = get_position()
+                client.send_position(x, y, angle)
 
-        if now >= next_status:
-            client.send_status(get_status())
-            next_status += status_period
+            if now >= next_status:
+                next_status += status_period
+                client.send_status(get_status())
 
-        if now >= next_path:
-            client.send_path_update(get_path_points(), "a_star")
-            next_path += path_period
+            if now >= next_path:
+                next_path += path_period
+                client.send_path_update(get_path_points(), "a_star")
 
-        drain_outbox(client, box)
+            drain_outbox(client, box)
+        except Exception:
+            logger.exception("send_loop 사이클 실패 — 다음 주기에 계속")
 
         stop_evt.wait(LOOP_IDLE_SEC)
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     client = init_websocket_client()
 
     stop_evt = threading.Event()
