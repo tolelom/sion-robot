@@ -97,7 +97,8 @@ class _MotionRunner:
                          v_mps: float, omega_rad: float, duration: float) -> None:
         """duration 동안 step_sec 간격으로 모터 명령 유지 + 포즈 적분 + 콜백 호출.
 
-        첫 iteration은 dt == 0이라 적분하지 않는다(명령 전파 지연을 인정).
+        취소되지 않으면 적분 구간의 합은 정확히 duration이 된다(마지막 조각은 t_end까지).
+        취소되면 마지막으로 적분한 시점까지만 반영한다 — 곧 모터가 정지.
         """
         self.robot.set_velocity(v_norm, omega_norm)
         start = time.monotonic()
@@ -107,6 +108,10 @@ class _MotionRunner:
         while not self.is_cancelled():
             now = time.monotonic()
             if now >= t_end:
+                # 마지막 조각: last_t ~ t_end. 이걸 빼먹으면 구간마다 최대 step_sec만큼 덜 움직인 것으로 추정된다.
+                if t_end > last_t:
+                    self.pose_est.update(v_mps, omega_rad, t_end - last_t)
+                    self.report_pose()
                 break
 
             dt = now - last_t
@@ -118,13 +123,6 @@ class _MotionRunner:
             sleep_t = max(0.0, self.step_sec - (time.monotonic() - now))
             if sleep_t > 0 and self._sleep(sleep_t):
                 break
-
-        # 마지막 잔여시간 보정(끝 경계까지). cancel로 빠진 경우엔 보정하지 않는다 — 곧 모터가 정지.
-        if not self.is_cancelled():
-            now2 = time.monotonic()
-            if now2 < t_end:
-                self.pose_est.update(v_mps, omega_rad, t_end - now2)
-                self.report_pose()
 
         self.robot.stop()
 

@@ -277,7 +277,8 @@ class TestEnemyGoal:
         hit = list(config.SERVO_ATTACK_HIT.items())
         init = list(config.SERVO_INIT_ANGLES.items())
         assert servo_angles == prep + hit + init
-        assert th > 0
+        # 회전 적분이 명령한 시간만큼 정확히 반영되어야 한다(마지막 조각 누락 회귀).
+        assert th == pytest.approx(math.radians(config.SERVO_ATTACK_TURN_DEG), abs=1e-6)
 
     def test_cancelled_before_start_skips_attack(self):
         robot = SpyRobot()
@@ -285,3 +286,18 @@ class TestEnemyGoal:
         cancel.set()
         self._run(robot, cancel)
         assert robot.servo_calls == []
+
+
+@pytest.mark.parametrize("step_sec", [0.003, 0.007])
+def test_drive_integrates_full_distance(step_sec):
+    """회귀: step_sec과 구간 시간이 나눠떨어지지 않아도 추정 위치가 목표 지점과 일치해야 한다."""
+    x, y, _ = follow_path_constant_speed(
+        SpyRobot(),
+        [(0.0, 0.0), (0.02, 0.0)],
+        is_enemy_goal=False,
+        v_cruise_norm=1.0,
+        scale_v_mps=1.0,  # 0.02s 주행
+        step_sec=step_sec,
+    )
+    assert x == pytest.approx(0.02, abs=1e-9)
+    assert y == pytest.approx(0.0, abs=1e-9)
