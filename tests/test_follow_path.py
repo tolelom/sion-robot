@@ -275,7 +275,7 @@ class TestEnemyGoal:
         assert robot.velocity_calls[-1][1] > 0
         servo_angles = [(sid, angle) for sid, angle, _, _ in robot.servo_calls]
         prep = [(sid, a) for sid, (a, _) in config.SERVO_ATTACK_PREP.items()]
-        hit = list(config.SERVO_ATTACK_HIT.items())
+        hit = list(config.SERVO_ATTACK_HIT_ANGLES.items())
         init = list(config.SERVO_INIT_ANGLES.items())
         assert servo_angles == prep + hit + init
         # 회전 적분이 명령한 시간만큼 정확히 반영되어야 한다(마지막 조각 누락 회귀).
@@ -316,7 +316,7 @@ def test_enemy_action_pause_is_cancellable(monkeypatch):
     class CancelOnHit(SpyRobot):
         def set_servo(self, servo_id, angle, speed=1, time=180):
             super().set_servo(servo_id, angle, speed, time)
-            if (servo_id, angle) in config.SERVO_ATTACK_HIT.items():
+            if (servo_id, angle) in config.SERVO_ATTACK_HIT_ANGLES.items():
                 cancel.set()
 
     robot = CancelOnHit()

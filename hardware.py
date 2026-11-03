@@ -3,7 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Tuple
 
-from config import K_OMEGA, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
+from config import OMEGA_MIX_GAIN, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +12,12 @@ def _clamp_unit(value: float) -> float:
     return float(max(-1.0, min(1.0, value)))
 
 
-def mix_differential(v_norm: float, omega_norm: float, k_omega: float = K_OMEGA) -> Tuple[float, float]:
+def mix_differential(v_norm: float, omega_norm: float, omega_gain: float = OMEGA_MIX_GAIN) -> Tuple[float, float]:
     """정규화된 (선속도, 각속도)를 좌·우 바퀴 출력 [-1, 1]로 바꾼다(차동 구동)."""
     v_norm = _clamp_unit(v_norm)
     omega_norm = _clamp_unit(omega_norm)
-    left = _clamp_unit(v_norm - k_omega * omega_norm)
-    right = _clamp_unit(v_norm + k_omega * omega_norm)
+    left = _clamp_unit(v_norm - omega_gain * omega_norm)
+    right = _clamp_unit(v_norm + omega_gain * omega_norm)
     return left, right
 
 

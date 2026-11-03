@@ -11,8 +11,10 @@ import threading
 import time
 from typing import Optional
 
-from config import (CAMERA_POLL_SEC, INFLATE_RADIUS, MAP_FILE, MIN_CHARGE_CELLS, OMEGA_TURN,
-                    POSE_PERIOD_SEC, SCALE_OMEGA_RAD, SCALE_V_MPS, STEP_SEC, V_CHARGE, V_CRUISE)
+from config import (
+    CAMERA_POLL_SEC, INFLATE_RADIUS_CELLS, MAP_FILE, MIN_CHARGE_CELLS, MOTION_STEP_SEC, OMEGA_TURN_NORM,
+    POSE_PERIOD_SEC, SCALE_OMEGA_RAD, SCALE_V_MPS, V_CHARGE_NORM, V_CRUISE_NORM,
+)
 from follow_path import follow_path_constant_speed
 from hardware import RobotBase, create_robot
 from map_loader import MapData, cell_to_world, load_map, world_to_cell
@@ -119,7 +121,7 @@ def move_worker(
             start_cell=start_cell,
             goal_cell=goal_cell,
             is_enemy_goal=is_enemy_goal,
-            inflate_radius=INFLATE_RADIUS,
+            inflate_radius=INFLATE_RADIUS_CELLS,
             min_charge_cells=MIN_CHARGE_CELLS,
         )
     except Exception as e:
@@ -150,13 +152,13 @@ def move_worker(
             robot=robot,
             waypoints_world=waypoints_world,
             is_enemy_goal=is_enemy_goal,
-            v_cruise_norm=V_CRUISE,
-            v_charge_norm=V_CHARGE,
-            omega_turn_norm=OMEGA_TURN,
+            v_cruise_norm=V_CRUISE_NORM,
+            v_charge_norm=V_CHARGE_NORM,
+            omega_turn_norm=OMEGA_TURN_NORM,
             scale_v_mps=SCALE_V_MPS,
             scale_omega_rad=SCALE_OMEGA_RAD,
             pose_update_cb=pose_cb,
-            step_sec=STEP_SEC,
+            step_sec=MOTION_STEP_SEC,
             cancel_event=cancel_event,
             theta0=theta0,
         )

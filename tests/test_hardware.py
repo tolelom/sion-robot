@@ -14,12 +14,12 @@ class TestMixDifferential:
         assert mix_differential(0.5, 0.0) == (0.5, 0.5)
 
     def test_turn_in_place_ccw(self):
-        left, right = mix_differential(0.0, 1.0, k_omega=0.7)
+        left, right = mix_differential(0.0, 1.0, omega_gain=0.7)
         assert left == pytest.approx(-0.7)
         assert right == pytest.approx(0.7)
 
     def test_inputs_and_outputs_clamped(self):
-        left, right = mix_differential(5.0, 5.0, k_omega=0.7)
+        left, right = mix_differential(5.0, 5.0, omega_gain=0.7)
         assert (left, right) == (pytest.approx(0.3), 1.0)
         assert mix_differential(-3.0, 0.0) == (-1.0, -1.0)
 

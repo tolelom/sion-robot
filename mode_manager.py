@@ -5,7 +5,7 @@ import random
 import time
 from typing import Any, Dict, Optional, Tuple
 
-from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS
+from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
 from map_loader import MapData, world_to_cell
 from path_planner import plan_path_for_goal
 from state import MODE_AUTO, MODE_MANUAL, VALID_MODES, AGVState, Cell
@@ -72,7 +72,7 @@ class ModeManager:
             path_cells, _ = plan_path_for_goal(
                 m, start_cell=start_cell, goal_cell=goal,
                 is_enemy_goal=False,
-                inflate_radius=INFLATE_RADIUS,
+                inflate_radius=INFLATE_RADIUS_CELLS,
                 min_charge_cells=MIN_CHARGE_CELLS,
             )
             if path_cells is not None:

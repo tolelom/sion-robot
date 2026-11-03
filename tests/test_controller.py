@@ -86,7 +86,7 @@ class TestMoveWorker:
             # # .
             . . .
         """)
-        monkeypatch.setattr(controller, "INFLATE_RADIUS", 0)
+        monkeypatch.setattr(controller, "INFLATE_RADIUS_CELLS", 0)
         called = []
         monkeypatch.setattr(controller, "follow_path_constant_speed", lambda **kw: called.append(kw))
         state = AGVState()
@@ -158,7 +158,7 @@ class TestEndCell:
             # # .
             . . .
         """)
-        monkeypatch.setattr(controller, "INFLATE_RADIUS", 0)
+        monkeypatch.setattr(controller, "INFLATE_RADIUS_CELLS", 0)
         end = controller.move_worker(FakeRobot(), m, (0, 0), (2, 2), False, AGVState())
         assert end == (0, 0)
 

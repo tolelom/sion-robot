@@ -9,9 +9,9 @@ import time
 from typing import Callable, List, Optional, Tuple
 
 from config import (
-    OMEGA_TURN, SCALE_OMEGA_RAD, SCALE_V_MPS, SEGMENT_PAUSE_SEC, SERVO_ATTACK_HIT,
-    SERVO_ATTACK_HIT_TIME, SERVO_ATTACK_PAUSE_SEC, SERVO_ATTACK_PREP, SERVO_ATTACK_TURN_DEG,
-    SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME, STEP_SEC, V_CHARGE, V_CRUISE,
+    MOTION_STEP_SEC, OMEGA_TURN_NORM, SCALE_OMEGA_RAD, SCALE_V_MPS, SEGMENT_PAUSE_SEC,
+    SERVO_ATTACK_HIT_ANGLES, SERVO_ATTACK_HIT_TIME, SERVO_ATTACK_PAUSE_SEC, SERVO_ATTACK_PREP,
+    SERVO_ATTACK_TURN_DEG, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME, V_CHARGE_NORM, V_CRUISE_NORM,
 )
 from hardware import RobotBase
 
@@ -170,7 +170,7 @@ def _execute_enemy_action(runner: _MotionRunner, omega_turn_norm: float, scale_o
         logger.info("enemy action cancelled before HIT")
         return
 
-    for sid, angle in SERVO_ATTACK_HIT.items():
+    for sid, angle in SERVO_ATTACK_HIT_ANGLES.items():
         robot.set_servo(sid, angle, SERVO_SPEED, SERVO_ATTACK_HIT_TIME)
     # 대기 중 취소되어도 팔은 초기 자세로 돌려놓는다(대기만 건너뛴다).
     cancelled = runner.sleep(SERVO_ATTACK_PAUSE_SEC)
@@ -192,13 +192,13 @@ def follow_path_constant_speed(
     robot: RobotBase,
     waypoints_world: List[Tuple[float, float]],
     is_enemy_goal: bool,
-    v_cruise_norm: float = V_CRUISE,
-    v_charge_norm: float = V_CHARGE,
-    omega_turn_norm: float = OMEGA_TURN,
+    v_cruise_norm: float = V_CRUISE_NORM,
+    v_charge_norm: float = V_CHARGE_NORM,
+    omega_turn_norm: float = OMEGA_TURN_NORM,
     scale_v_mps: float = SCALE_V_MPS,
     scale_omega_rad: float = SCALE_OMEGA_RAD,
     pose_update_cb: Optional[PoseCallback] = None,
-    step_sec: float = STEP_SEC,
+    step_sec: float = MOTION_STEP_SEC,
     cancel_event: Optional[threading.Event] = None,
     theta0: float = 0.0,
 ) -> Pose:
