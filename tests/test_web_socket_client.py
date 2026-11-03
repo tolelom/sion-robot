@@ -258,3 +258,20 @@ class TestStart:
         monkeypatch.setattr(client, "_run_async_loop", client._connected_event.set)
         assert client.start(timeout=1.0) is True
         assert client.connected is True
+
+
+# ---------------------------------------------------------------------------
+# 회귀: 잘못된 메시지 한 건이 연결을 끊으면 안 된다
+# ---------------------------------------------------------------------------
+
+class TestMalformedMessageDoesNotBreakConnection:
+    @pytest.mark.parametrize("raw", ["[1, 2]", "42", "\"text\"", "null"])
+    def test_non_object_json_ignored(self, client, raw):
+        # 이전에는 data.get에서 AttributeError가 나 수신 루프가 깨지고 재연결했다.
+        asyncio.run(client._handle_message(raw))
+
+    def test_handler_exception_isolated(self, client, monkeypatch):
+        monkeypatch.setattr(client, "execute_move_command", AsyncMock(side_effect=RuntimeError("boom")))
+        raw = json.dumps({"type": "command", "data": {"target_x": 1, "target_y": 2}})
+        asyncio.run(client._handle_message_safely(raw))  # raise하지 않아야 한다
+        client.execute_move_command.assert_awaited_once()

@@ -94,7 +94,7 @@ class AGVWebSocketClient:
                     logger.info("Web Socket 연결: %s", self.server_url)
 
                     async for message in websocket:
-                        await self._handle_message(message)
+                        await self._handle_message_safely(message)
 
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning("WebSocket 연결 종료: code=%s reason=%s", e.code, e.reason)
@@ -118,11 +118,23 @@ class AGVWebSocketClient:
 
         logger.info("WebSocket loop 종료")
 
+    async def _handle_message_safely(self, message: str) -> None:
+        """메시지 한 건 처리 중 예외가 수신 루프(=연결)까지 끊지 않게 격리한다."""
+        try:
+            await self._handle_message(message)
+        except Exception:
+            logger.exception("메시지 처리 중 예외 (message=%.200r)", message)
+
     async def _handle_message(self, message: str):
         try:
             data = json.loads(message)
         except json.JSONDecodeError as e:
             logger.error("JSON 파싱 오류: %s", e)
+            return
+
+        # 최상위가 객체가 아니면(예: 배열·숫자) .get이 AttributeError를 낸다.
+        if not isinstance(data, dict):
+            logger.warning("메시지 최상위가 JSON 객체가 아님: %.200r", message)
             return
 
         msg_type = data.get("type")
