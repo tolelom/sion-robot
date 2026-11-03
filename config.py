@@ -1,7 +1,11 @@
 # config.py — 공유 상수 중앙 관리
+import os
+
+# 저장소 루트. 데이터 파일 경로는 실행 위치(cwd)가 아니라 이 위치 기준으로 찾는다.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Map ---
-MAP_FILE = "map_smallroom_60x60.json"
+MAP_FILE = os.path.join(BASE_DIR, "map_smallroom_60x60.json")
 
 # --- Planning ---
 INFLATE_RADIUS = 2

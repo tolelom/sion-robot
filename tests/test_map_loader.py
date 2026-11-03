@@ -129,3 +129,12 @@ class TestCoordinateConversion:
     def test_negative_world_coords_round_to_negative_cell(self):
         # 음수 좌표는 floor div 동작 검증
         assert world_to_cell(-0.05, 0.0, 0.1) == (-1, 0)
+
+
+def test_config_map_file_loads_regardless_of_cwd(tmp_path, monkeypatch):
+    """회귀: 저장소 밖에서 실행해도 config.MAP_FILE을 찾아야 한다."""
+    import config
+
+    monkeypatch.chdir(tmp_path)
+    m = load_map(config.MAP_FILE)
+    assert m.width > 0 and m.start is not None

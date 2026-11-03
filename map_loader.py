@@ -29,7 +29,7 @@ class MapData:
 
 def load_map(path: str) -> MapData:
     """JSON 맵 파일을 읽어서 MapData로 변환"""
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     width = data["width"]
