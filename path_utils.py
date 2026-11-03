@@ -9,6 +9,7 @@ from typing import List, Tuple
 from config import MIN_CHARGE_CELLS
 from map_loader import CellType, MapData
 
+
 def line_of_sight(m: MapData,
                   a: Tuple[int, int],
                   b: Tuple[int, int]) -> bool:

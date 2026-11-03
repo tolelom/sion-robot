@@ -17,10 +17,6 @@ from follow_path import PoseEstimator, follow_path_constant_speed
 from hardware import RobotBase
 
 
-# ---------------------------------------------------------------------------
-# PoseEstimator
-# ---------------------------------------------------------------------------
-
 class TestPoseEstimator:
     def test_initial_pose(self):
         p = PoseEstimator(1.0, 2.0, theta0=0.5)
@@ -57,10 +53,6 @@ class TestPoseEstimator:
         assert -math.pi <= th <= math.pi
 
 
-# ---------------------------------------------------------------------------
-# 스파이 로봇
-# ---------------------------------------------------------------------------
-
 class SpyRobot(RobotBase):
     """모든 호출을 기록하는 fake RobotBase."""
 
@@ -78,10 +70,6 @@ class SpyRobot(RobotBase):
     def set_servo(self, servo_id, angle, speed=1, time=180) -> None:
         self.servo_calls.append((servo_id, angle, speed, time))
 
-
-# ---------------------------------------------------------------------------
-# follow_path_constant_speed
-# ---------------------------------------------------------------------------
 
 class TestFollowPath:
     def test_invalid_step_sec_raises(self):
@@ -145,7 +133,6 @@ class TestFollowPath:
             cancel_event=cancel,
             step_sec=0.001,
         )
-        # 초기 콜백 한 번은 보장 (safe_cb 호출)
         assert len(callback_poses) >= 1
         assert callback_poses[0] == (0.0, 0.0, 0.0)
 
@@ -180,7 +167,6 @@ class TestFollowPath:
             cancel_event=cancel,
             step_sec=0.001,
         )
-        # stop이 최소 한 번
         assert robot.stop_calls >= 1
 
     @pytest.mark.slow
@@ -197,10 +183,7 @@ class TestFollowPath:
             scale_omega_rad=1.0,
             step_sec=0.005,
         )
-        # 종료 후 모터 정지 보장
         assert robot.stop_calls >= 1
-        # DRIVE 단계의 set_velocity가 최소 한 번 호출되어야 한다
-        # (각 run_for_duration이 robot.set_velocity로 시작)
         assert len(robot.velocity_calls) >= 1
 
 
