@@ -8,35 +8,32 @@ import os
 from config import BASE_DIR
 
 WIDTH, HEIGHT = 60, 60
-RESOLUTION_M = 0.05  # 5cm
+RESOLUTION_M = 0.05
 OUTPUT_FILE = os.path.join(BASE_DIR, "map_smallroom_60x60.json")
+
+# y=0이 맵의 아래쪽 행이다.
+START_CELL = (4, 4)
+ENEMY_CELL = (16, 16)
+WALL_RECTS = [  # (x 범위, y 범위)
+    (range(10, 11), range(3, 19)),
+    (range(0, 9), range(12, 13)),
+    (range(14, 19), range(8, 10)),
+]
 
 
 def build_cells():
     cells = [["."] * WIDTH for _ in range(HEIGHT)]
 
-    def set_char(x, y, ch):
-        # y: 0이 맵의 아래쪽, HEIGHT-1이 위쪽
+    def set_char(cell, ch):
+        x, y = cell
         cells[y][x] = ch
 
-    # 시작점 S (약 (0.25m, 0.25m))
-    set_char(4, 4, "S")
-
-    # 적 E (약 (0.85m, 0.85m))
-    set_char(16, 16, "E")
-
-    # 세로벽: x = 10, y = 3..18
-    for y in range(3, 19):
-        set_char(10, y, "#")
-
-    # 가로벽: y = 12, x = 0..8
-    for x in range(0, 9):
-        set_char(x, 12, "#")
-
-    # 작은 블럭: y = 8..9, x = 14..18
-    for y in range(8, 10):
-        for x in range(14, 19):
-            set_char(x, y, "#")
+    set_char(START_CELL, "S")
+    set_char(ENEMY_CELL, "E")
+    for xs, ys in WALL_RECTS:
+        for y in ys:
+            for x in xs:
+                set_char((x, y), "#")
 
     return ["".join(row) for row in cells]
 

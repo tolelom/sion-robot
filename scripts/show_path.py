@@ -1,5 +1,7 @@
-# show_path.py — 경로 시각화 유틸리티 (사용: python -m scripts.show_path)
+"""MAP_FILE의 시작점→첫 적 경로를 텍스트로 그린다.
 
+사용: python -m scripts.show_path
+"""
 import json
 import logging
 from typing import List, Tuple

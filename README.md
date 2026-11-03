@@ -79,7 +79,7 @@ python controller.py
 | `python -m scripts.show_map [맵 파일]` | 맵 시각화 |
 | `python -m scripts.show_path` | `MAP_FILE`의 시작점→첫 적 경로 시각화 |
 | `python -m scripts.generate_smallroom_map` | `map_smallroom_60x60.json` 재생성 |
-| `python -m scripts.calib_motion` | 모터 캘리브레이션(실기) |
+| `python -m scripts.calib_motion {drive\|turn} 속도 ...` | 모터 캘리브레이션(실기). 예: `drive 0.2 0.4 0.6` |
 | `python -m scripts.motor_smoke_test` | 1초 전진 후 정지(실기) |
 | `python -m tolelom.main` | WebSocket 주기 송신 데모. 접속 주소는 `SION_BACKEND_WS_URL`(기본 `ws://localhost:3000/websocket/agv`) |
 
