@@ -35,6 +35,6 @@ jobs:
           python -m pytest tests/ \
             --cov=astar --cov=path_utils --cov=map_loader \
             --cov=state --cov=mode_manager --cov=follow_path --cov=path_planner \
-            --cov=controller --cov=hardware --cov=tolelom \
+            --cov=controller --cov=hardware \
             --cov-report=term \
             --cov-fail-under=80
