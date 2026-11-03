@@ -1,4 +1,4 @@
-# show_path.py — 경로 시각화 유틸리티
+# show_path.py — 경로 시각화 유틸리티 (사용: python -m scripts.show_path)
 
 import json
 import logging

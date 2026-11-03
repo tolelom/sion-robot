@@ -51,11 +51,10 @@ flowchart LR
 | `follow_path.py` | 위치 추정과 경로 추종, 적 도달 동작 |
 | `hardware.py` | 로봇 인터페이스와 JETANK·더미 구현 |
 | `map_loader.py` | JSON 맵 로드, 셀↔월드 좌표 변환 |
-| `config.py` | 속도, 팽창 반경, 서보 각도 등 상수 |
+| `config.py` | 속도, 팽창 반경, 서보 각도 등 상수. 맵 경로는 저장소 기준 절대 경로 |
 | `tolelom/` | 서버 연동용 WebSocket 클라이언트(단독 실행). 제어 루프와는 연결되어 있지 않다 |
-| `show_map.py`, `show_path.py`, `generate_smallroom_map.py` | 맵·경로 시각화와 맵 생성 |
-| `calib_motion.py` | 모터 캘리브레이션 |
-| `tests/` | pytest 단위·통합 테스트. `conftest.py`의 `make_map`으로 문자열 격자에서 맵을 만든다 |
+| `scripts/` | 보조 스크립트: 맵·경로 시각화(`show_map`, `show_path`), 맵 생성(`generate_smallroom_map`), 모터 캘리브레이션(`calib_motion`), 모터 동작 확인(`motor_smoke_test`) |
+| `tests/` | pytest 단위·통합 테스트. `conftest.py`의 `make_map`으로 문자열 격자에서 맵을 만든다. 하드웨어·네트워크 없이 돈다 |
 
 ## 실행
 
@@ -69,12 +68,19 @@ pip install -r requirements-dev.txt opencv-python
 python controller.py
 ```
 
-`jetbot`이나 `SCSCtrl`을 import하지 못하면 `DummyRobot`으로 넘어가므로 데스크톱에서도 실행할 수 있다. 맵 파일은 `config.py`의 `MAP_FILE`로 정한다.
+`jetbot`이나 `SCSCtrl`을 import하지 못하면 `DummyRobot`으로 넘어가므로 데스크톱에서도 실행할 수 있다. OpenCV가 없으면 카메라 스레드만 건너뛴다. 맵 파일은 `config.py`의 `MAP_FILE`로 정한다.
+
+`scripts/`와 `tolelom/`은 루트 모듈을 import하므로 저장소 루트에서 `python -m`으로 실행한다.
 
 | 명령 | 용도 |
 |---|---|
 | `python controller.py` | 제어 루프 실행 |
 | `python -m pytest` | 테스트 |
-| `python show_map.py [맵 파일]` | 맵 시각화 |
+| `python -m scripts.show_map [맵 파일]` | 맵 시각화 |
+| `python -m scripts.show_path` | `MAP_FILE`의 시작점→첫 적 경로 시각화 |
+| `python -m scripts.generate_smallroom_map` | `map_smallroom_60x60.json` 재생성 |
+| `python -m scripts.calib_motion` | 모터 캘리브레이션(실기) |
+| `python -m scripts.motor_smoke_test` | 1초 전진 후 정지(실기) |
+| `python -m tolelom.main` | WebSocket 주기 송신 데모. 접속 주소는 `SION_BACKEND_WS_URL`(기본 `ws://localhost:3000/websocket/agv`) |
 
 CI는 push마다 pytest를 커버리지 하한과 함께 돌린다.
