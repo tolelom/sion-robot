@@ -9,17 +9,16 @@ import os
 import sys
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Optional
 
+from config import (CAMERA_POLL_SEC, INFLATE_RADIUS, MAP_FILE, MIN_CHARGE_CELLS, OMEGA_TURN,
+                    POSE_PERIOD_SEC, SCALE_OMEGA_RAD, SCALE_V_MPS, STEP_SEC, V_CHARGE, V_CRUISE)
 from follow_path import follow_path_constant_speed
+from hardware import RobotBase, create_robot
 from map_loader import MapData, cell_to_world, load_map, world_to_cell
-from config import (MAP_FILE, POSE_PERIOD_SEC, INFLATE_RADIUS, MIN_CHARGE_CELLS,
-                     V_CRUISE, V_CHARGE, OMEGA_TURN, SCALE_V_MPS, SCALE_OMEGA_RAD,
-                     STEP_SEC, CAMERA_POLL_SEC)
-from hardware import create_robot, RobotBase
 from mode_manager import ModeManager
 from path_planner import plan_path_for_goal
-from state import AGVState
+from state import MODE_MANUAL, AGVState, Cell
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,11 @@ try:
     import cv2
 except ImportError:  # pragma: no cover - 설치 여부에 따라 갈림
     cv2 = None
+
+MAIN_LOOP_SEC = 0.01           # 메인 루프 주기
+CAMERA_RETRY_SEC = 1.0         # 카메라 열기 실패·예외 후 재시도 대기
+CAMERA_READ_FAIL_SEC = 0.2     # 프레임 읽기 실패 후 재오픈 전 대기
+MOVE_JOIN_TIMEOUT_SEC = 2.0    # 종료 시 이동 스레드가 정지하기를 기다리는 시간
 
 
 # =========================
@@ -51,32 +55,31 @@ def camera_thread_main(stop_event: threading.Event) -> None:
             if cap is None:
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
-                    logger.warning("open failed, retry in 1s")
+                    logger.warning("open failed, retry in %.0fs", CAMERA_RETRY_SEC)
                     cap = None
-                    time.sleep(1.0)
+                    time.sleep(CAMERA_RETRY_SEC)
                     continue
                 logger.info("camera opened")
             ok, _ = cap.read()
             if not ok:
-                time.sleep(0.2)
-                cap.release()
-                cap = None
+                time.sleep(CAMERA_READ_FAIL_SEC)
+                cap = _safe_release(cap)
                 continue
             time.sleep(CAMERA_POLL_SEC)
         except (cv2.error, OSError) as e:
             logger.warning("camera I/O error: %s", e)
             cap = _safe_release(cap)
-            time.sleep(1.0)
+            time.sleep(CAMERA_RETRY_SEC)
         except Exception:
             logger.exception("camera unexpected exception")
             cap = _safe_release(cap)
-            time.sleep(1.0)
+            time.sleep(CAMERA_RETRY_SEC)
     _safe_release(cap)
     logger.info("camera thread stop")
 
 
 def _safe_release(cap) -> None:
-    """cv2 캡처 자원 해제. 실패해도 호출부를 깨지 않는다."""
+    """cv2 캡처 자원 해제. 실패해도 호출부를 깨지 않는다. 항상 None을 반환한다(cap = _safe_release(cap))."""
     if cap is None:
         return None
     try:
@@ -93,8 +96,8 @@ def _safe_release(cap) -> None:
 def move_worker(
     robot: RobotBase,
     m: MapData,
-    start_cell: Tuple[int, int],
-    goal_cell: Tuple[int, int],
+    start_cell: Cell,
+    goal_cell: Cell,
     is_enemy_goal: bool,
     state: AGVState,
     cancel_event: Optional[threading.Event] = None,
@@ -131,8 +134,7 @@ def move_worker(
     state.set_plan_result(True)
 
     def pose_cb(px: float, py: float, ptheta: float) -> None:
-        cx, cy = world_to_cell(px, py, m.resolution)
-        state.set_pose((px, py, ptheta), (cx, cy))
+        state.set_pose((px, py, ptheta), world_to_cell(px, py, m.resolution))
 
     try:
         follow_path_constant_speed(
@@ -157,7 +159,7 @@ def move_worker(
 # MAIN
 # =========================
 
-def main() -> None:
+def setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -169,26 +171,60 @@ def main() -> None:
     except Exception:
         logger.debug("stdout reconfigure not supported on this platform")
 
-    logger.info("Loading map ...")
-    m = load_map(MAP_FILE)
+
+def init_state(m: MapData) -> AGVState:
+    """맵의 시작 위치로 포즈를 초기화한다. 적이 있으면 첫 적을 manual 모드 목표로 예약한다."""
     if m.start is None:
         raise RuntimeError("Start(S) not found in map")
 
     state = AGVState()
+    if m.enemies:
+        state.set_mode(MODE_MANUAL)
+        state.set_pending_goal_cell(tuple(m.enemies[0]))
+        state.set_enemy_goal(True)
+
+    wx0, wy0 = cell_to_world(m.start[0], m.start[1], m.resolution)
+    state.set_pose((wx0, wy0, 0.0), m.start)
+    return state
+
+
+def _log_pose(state: AGVState) -> None:
+    pose_world = state.get_pose_world()
+    pose_cell = state.get_pose_cell()
+    if pose_world and pose_cell:
+        px, py, pth = pose_world
+        cx, cy = pose_cell
+        logger.debug("world=(%.2f,%.2f,theta_deg=%.1f) cell=(%s,%s)", px, py, math.degrees(pth), cx, cy)
+    else:
+        logger.debug("pose is None")
+
+
+def _shutdown(robot: RobotBase, move_th: Optional[threading.Thread]) -> None:
+    """stop_event가 set된 뒤 호출: 이동 스레드가 모터를 멈추고 끝나기를 기다린 뒤 한 번 더 정지."""
+    # 진행 중인 follow가 cancel_event(stop_event)에 반응해 모터 정지 + 반환할 시간을 준다.
+    # daemon thread라 join 없이도 프로세스 종료에 묶이지만, robot.stop() 보장을 위해 join.
+    if move_th is not None and move_th.is_alive():
+        move_th.join(timeout=MOVE_JOIN_TIMEOUT_SEC)
+        if move_th.is_alive():
+            logger.warning("move_th did not finish within %.0fs", MOVE_JOIN_TIMEOUT_SEC)
+    # 안전 차원에서 한 번 더 모터 정지 시도.
+    try:
+        robot.stop()
+    except Exception:
+        logger.exception("final robot.stop() failed")
+
+
+def main() -> None:
+    setup_logging()
+
+    logger.info("Loading map ...")
+    m = load_map(MAP_FILE)
+    state = init_state(m)
     robot = create_robot()
     mode_mgr = ModeManager(state, m)
     stop_event = threading.Event()
 
-    # 적 좌표가 있으면 초기 목표로 설정
-    if hasattr(m, "enemies") and m.enemies:
-        enemy_cell = tuple(m.enemies[0])
-        state.set_mode("manual")
-        state.set_pending_goal_cell(enemy_cell)
-        state.set_enemy_goal(True)
-
     current_cell = m.start
-    wx0, wy0 = cell_to_world(current_cell[0], current_cell[1], m.resolution)
-    state.set_pose((wx0, wy0, 0.0), current_cell)
 
     cam_th = threading.Thread(target=camera_thread_main, args=(stop_event,), daemon=True)
     cam_th.start()
@@ -209,48 +245,28 @@ def main() -> None:
             # invariant: move_th는 한 번에 하나만 살아 있다. is_moving 가드(위에서 is_alive 확인)가
             # 동시 실행을 막고, 이전 move_th 객체는 새 할당으로 해제되어 GC된다(데몬 스레드라
             # 명시 join 불필요). 새 goal은 이전 follow가 자연 종료된 다음 cycle에 picked up된다.
-            goal_cell = state.get_goal_cell()
-            if not is_moving and goal_cell is not None:
-                is_enemy = state.is_enemy_goal()
-                consumed = state.consume_goal()
-                if consumed is not None:
+            if not is_moving:
+                goal_cell, is_enemy = state.take_goal()
+                if goal_cell is not None:
                     move_th = threading.Thread(
                         target=move_worker,
-                        args=(robot, m, current_cell, consumed, is_enemy, state, stop_event),
+                        args=(robot, m, current_cell, goal_cell, is_enemy, state, stop_event),
                         daemon=True,
                     )
                     move_th.start()
-                    current_cell = consumed
+                    current_cell = goal_cell
 
-            # 주기적 포즈 출력
             if now - last_pose_print >= POSE_PERIOD_SEC:
-                pose_world = state.get_pose_world()
-                pose_cell = state.get_pose_cell()
-                if pose_world and pose_cell:
-                    px, py, pth = pose_world
-                    cx, cy = pose_cell
-                    logger.debug("world=(%.2f,%.2f,theta_deg=%.1f) cell=(%s,%s)", px, py, math.degrees(pth), cx, cy)
-                else:
-                    logger.debug("pose is None")
+                _log_pose(state)
                 last_pose_print = now
 
-            time.sleep(0.01)
+            time.sleep(MAIN_LOOP_SEC)
 
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt -> stopping")
     finally:
         stop_event.set()
-        # 진행 중인 follow가 cancel_event(stop_event)에 반응해 모터 정지 + 반환할 시간을 준다.
-        # daemon thread라 join 없이도 프로세스 종료에 묶이지만, robot.stop() 보장을 위해 join.
-        if move_th is not None and move_th.is_alive():
-            move_th.join(timeout=2.0)
-            if move_th.is_alive():
-                logger.warning("move_th did not finish within 2s")
-        # 안전 차원에서 한 번 더 모터 정지 시도.
-        try:
-            robot.stop()
-        except Exception:
-            logger.exception("final robot.stop() failed")
+        _shutdown(robot, move_th)
         logger.info("Exit")
 
 
