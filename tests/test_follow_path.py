@@ -201,3 +201,43 @@ class TestFollowPath:
         # DRIVE 단계의 set_velocity가 최소 한 번 호출되어야 한다
         # (각 run_for_duration이 robot.set_velocity로 시작)
         assert len(robot.velocity_calls) >= 1
+
+
+class TestInitialHeading:
+    """회귀: 직전 이동이 끝난 방향(theta0)에서 출발해야 첫 회전 각도가 맞는다."""
+
+    def test_aligned_heading_skips_turn(self):
+        robot = SpyRobot()
+        follow_path_constant_speed(
+            robot,
+            [(0.0, 0.0), (0.0, 0.01)],  # 북쪽(+y)으로 직진
+            is_enemy_goal=False,
+            v_cruise_norm=1.0,
+            scale_v_mps=1.0,
+            step_sec=0.005,
+            theta0=math.pi / 2,
+        )
+        # 이미 북쪽을 보고 있으므로 회전(omega != 0) 명령 없이 바로 직진한다.
+        assert all(omega == 0.0 for _, omega in robot.velocity_calls)
+
+    def test_default_heading_turns(self):
+        robot = SpyRobot()
+        cancel = threading.Event()
+        poses: List[Tuple[float, float, float]] = []
+        follow_path_constant_speed(
+            robot,
+            [(0.0, 0.0), (0.0, 0.01)],
+            is_enemy_goal=False,
+            pose_update_cb=lambda *p: poses.append(p),
+            cancel_event=cancel,
+            step_sec=0.001,
+            omega_turn_norm=1.0,
+            scale_omega_rad=1000.0,  # 회전을 거의 즉시 끝낸다
+            v_cruise_norm=1.0,
+            scale_v_mps=1.0,
+        )
+        # theta0=0(동쪽)에서 북쪽으로 가려면 반시계 회전이 먼저 나온다.
+        assert robot.velocity_calls[0][1] > 0
+
+    def test_single_waypoint_returns_theta0(self):
+        assert follow_path_constant_speed(SpyRobot(), [(1.0, 2.0)], False, theta0=1.0) == (1.0, 2.0, 1.0)

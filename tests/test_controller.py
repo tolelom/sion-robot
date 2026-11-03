@@ -175,3 +175,12 @@ class TestEndCell:
         job.join(2.0)
         assert not job.is_alive()
         assert job.end_cell == (4, 0)
+
+
+def test_move_worker_passes_current_heading(open_map, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(controller, "follow_path_constant_speed", lambda **kw: captured.update(kw))
+    state = AGVState()
+    state.set_pose((0.05, 0.05, 1.25), (0, 0))
+    controller.move_worker(FakeRobot(), open_map, (0, 0), (4, 0), False, state)
+    assert captured["theta0"] == 1.25

@@ -137,6 +137,11 @@ def move_worker(
     waypoints_world = [cell_to_world(x, y, m.resolution) for x, y in path_cells]
     state.set_plan_result(True)
 
+    # 직전 이동이 끝난 방향에서 출발한다. 0으로 두면 로봇이 실제로는 다른 방향을
+    # 보고 있는데도 동쪽을 본다고 가정해 첫 회전 각도가 틀어진다.
+    pose_world = state.get_pose_world()
+    theta0 = pose_world[2] if pose_world is not None else 0.0
+
     def pose_cb(px: float, py: float, ptheta: float) -> None:
         state.set_pose((px, py, ptheta), world_to_cell(px, py, m.resolution))
 
@@ -153,6 +158,7 @@ def move_worker(
             pose_update_cb=pose_cb,
             step_sec=STEP_SEC,
             cancel_event=cancel_event,
+            theta0=theta0,
         )
     except Exception as e:
         state.set_plan_result(False, f"follow exception: {e}")
