@@ -16,10 +16,6 @@ def _write_map(tmp_path: Path, payload: dict) -> Path:
     return f
 
 
-# ---------------------------------------------------------------------------
-# load_map
-# ---------------------------------------------------------------------------
-
 class TestLoadMap:
     def test_loads_minimal_map(self, tmp_path: Path):
         path = _write_map(
@@ -92,10 +88,6 @@ class TestLoadMap:
         with pytest.raises(ValueError, match="height mismatch"):
             load_map(str(path))
 
-
-# ---------------------------------------------------------------------------
-# 좌표 변환
-# ---------------------------------------------------------------------------
 
 class TestCoordinateConversion:
     def test_cell_to_world_center_of_cell(self):

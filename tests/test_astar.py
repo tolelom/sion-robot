@@ -12,10 +12,6 @@ from map_loader import CellType
 from tests.conftest import make_map
 
 
-# ---------------------------------------------------------------------------
-# astar_normal
-# ---------------------------------------------------------------------------
-
 class TestAStarNormal:
     def test_start_equals_goal_returns_single_cell(self):
         m = make_map(
@@ -72,7 +68,6 @@ class TestAStarNormal:
         assert path is not None
         assert path[0] == (0, 0)
         assert path[-1] == (0, 4)
-        # 벽 셀을 지나지 않음
         for x, y in path:
             assert m.grid[y][x] != CellType.WALL
         # 우회하느라 직선 거리(5)보다 길어야 함
@@ -118,10 +113,6 @@ class TestAStarNormal:
             step = (curr[0] - prev[0], curr[1] - prev[1])
             assert step in valid_steps, f"잘못된 이동: {prev} -> {curr}"
 
-
-# ---------------------------------------------------------------------------
-# astar_enemy
-# ---------------------------------------------------------------------------
 
 class TestAStarEnemy:
     def test_straight_line_prefers_no_turn(self):
@@ -185,10 +176,6 @@ class TestAStarEnemy:
         # enemy 변형은 거리 동률 중 회전 최소를 고름 → 거리는 같거나 매우 근접
         assert abs(length(normal_path) - length(enemy_path)) < 1e-6
 
-
-# ---------------------------------------------------------------------------
-# plan_path: goal cell 타입에 따른 디스패치
-# ---------------------------------------------------------------------------
 
 class TestPlanPath:
     def test_dispatches_to_enemy_when_goal_is_enemy_cell(self):

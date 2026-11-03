@@ -38,17 +38,13 @@ def mm(state, m):
     return ModeManager(state, m)
 
 
-# ---------------------------------------------------------------------------
-# apply_server_command
-# ---------------------------------------------------------------------------
-
 class TestApplyServerCommand:
     def test_mode_change_to_manual(self, mm, state):
         mm.apply_server_command({"mode": "manual"}, is_moving=False)
         assert state.get_mode() == "manual"
 
     def test_mode_change_ignored_for_invalid_value(self, mm, state):
-        # "turbo" 같은 알 수 없는 값은 무시되어야 한다 — set_mode가 그대로 호출되면 assert 실패.
+        # 알 수 없는 값을 set_mode에 그대로 넘기면 ValueError가 난다.
         original = state.get_mode()
         mm.apply_server_command({"mode": "turbo"}, is_moving=False)
         assert state.get_mode() == original
@@ -110,10 +106,6 @@ class TestApplyServerCommand:
         assert "goal must be a dict" in state.get_last_error()
 
 
-# ---------------------------------------------------------------------------
-# tick — manual 모드
-# ---------------------------------------------------------------------------
-
 class TestTickManual:
     def test_promotes_pending_goal_when_idle(self, mm, state):
         state.set_mode("manual")
@@ -139,10 +131,6 @@ class TestTickManual:
         assert state.get_pending_goal_cell() == (9, 9)
 
 
-# ---------------------------------------------------------------------------
-# tick — auto 모드
-# ---------------------------------------------------------------------------
-
 class TestTickAuto:
     def test_clears_pending_goal_in_auto_mode(self, mm, state):
         state.set_mode("auto")
@@ -156,7 +144,6 @@ class TestTickAuto:
         # 마지막 자동 시각을 충분히 과거로 → 인터벌 만료
         mm._last_auto_time = time.time() - 1000
 
-        # pick_random_goal이 (2, 2)를 반환하도록 직접 패치
         mocker.patch.object(mm, "pick_random_goal", return_value=(2, 2))
 
         mm.tick(current_cell=(0, 0), is_moving=False)
@@ -169,7 +156,6 @@ class TestTickAuto:
         mocker.patch.object(mm, "pick_random_goal", return_value=(2, 2))
         mm._last_auto_time = time.time() - 1000
         mm.tick(current_cell=(0, 0), is_moving=False)
-        # 기존 goal 유지
         assert state.get_goal_cell() == (9, 9)
 
     def test_auto_skips_when_within_interval(self, mocker, mm, state):
@@ -187,10 +173,6 @@ class TestTickAuto:
         mm.tick(current_cell=(0, 0), is_moving=True)
         spy.assert_not_called()
 
-
-# ---------------------------------------------------------------------------
-# pick_random_goal — plan_path_for_goal 모킹
-# ---------------------------------------------------------------------------
 
 class TestPickRandomGoal:
     def test_returns_first_planable_goal(self, mocker, mm):

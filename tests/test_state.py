@@ -139,7 +139,6 @@ class TestThreadSafety:
         for t in threads:
             t.join(timeout=10)
         assert errors == []
-        # 끝나고도 mode가 유효 값이어야 함
         assert s.get_mode() in ("auto", "manual")
 
     def test_concurrent_promote_pending_goal_unique_owner(self):

@@ -61,10 +61,6 @@ class _FakeWebSocket:
         self.closed = True
 
 
-# ---------------------------------------------------------------------------
-# URL 결정
-# ---------------------------------------------------------------------------
-
 class TestResolveBackendWsUrl:
     def test_explicit_wins(self, monkeypatch):
         monkeypatch.setenv("SION_BACKEND_WS_URL", "ws://env/agv")
@@ -82,10 +78,6 @@ class TestResolveBackendWsUrl:
         monkeypatch.setenv("SION_BACKEND_WS_URL", "ws://env/agv")
         assert AGVWebSocketClient().server_url == "ws://env/agv"
 
-
-# ---------------------------------------------------------------------------
-# 송신 메시지 형식 (백엔드와의 계약)
-# ---------------------------------------------------------------------------
 
 class TestOutgoingPayloads:
     def test_send_position(self, client, sent):
@@ -164,10 +156,6 @@ class TestOutgoingPayloads:
         assert sent[0][1]["length"] == 0.0
 
 
-# ---------------------------------------------------------------------------
-# _send_message: 연결 상태 가드와 envelope
-# ---------------------------------------------------------------------------
-
 class TestSendMessage:
     def test_not_connected_is_noop(self, client):
         # 연결 전 호출이 예외 없이 무시되어야 한다.
@@ -200,10 +188,6 @@ class TestSendMessage:
 
         client._send_message("log", {"message": "hi"})  # raise하지 않아야 한다
 
-
-# ---------------------------------------------------------------------------
-# 수신 메시지 처리
-# ---------------------------------------------------------------------------
 
 def _handle(client: AGVWebSocketClient, payload) -> None:
     raw = payload if isinstance(payload, str) else json.dumps(payload)
@@ -244,10 +228,6 @@ class TestHandleMessage:
         client.execute_emergency_stop.assert_not_awaited()
 
 
-# ---------------------------------------------------------------------------
-# start(): 연결 timeout
-# ---------------------------------------------------------------------------
-
 class TestStart:
     def test_timeout_returns_false(self, client, monkeypatch):
         monkeypatch.setattr(client, "_run_async_loop", lambda: None)
@@ -259,10 +239,6 @@ class TestStart:
         assert client.start(timeout=1.0) is True
         assert client.connected is True
 
-
-# ---------------------------------------------------------------------------
-# 회귀: 잘못된 메시지 한 건이 연결을 끊으면 안 된다
-# ---------------------------------------------------------------------------
 
 class TestMalformedMessageDoesNotBreakConnection:
     @pytest.mark.parametrize("raw", ["[1, 2]", "42", "\"text\"", "null"])
@@ -276,10 +252,6 @@ class TestMalformedMessageDoesNotBreakConnection:
         asyncio.run(client._handle_message_safely(raw))  # raise하지 않아야 한다
         client.execute_move_command.assert_awaited_once()
 
-
-# ---------------------------------------------------------------------------
-# 재연결 루프와 close()
-# ---------------------------------------------------------------------------
 
 class TestReconnectAndClose:
     def test_close_interrupts_backoff(self, client, monkeypatch):
