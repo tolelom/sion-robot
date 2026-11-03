@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
+"""모터 캘리브레이션: 일정 속도로 직진·회전시킨 뒤 이동 거리/각도를 손으로 재서
+config.SCALE_V_MPS·SCALE_OMEGA_RAD를 정한다. 실제 JETANK에서만 동작한다.
+
+사용: python -m scripts.calib_motion   (필요한 테스트의 주석을 풀고 실행)
+"""
 import time
-from jetbot import Robot   # test_robot.py 안의 Robot 클래스 사용
+
+from jetbot import Robot
 
 robot = Robot()
 
