@@ -1,8 +1,6 @@
-"""WebSocket 주기 송신 데모 진입점.
+"""WebSocket 주기 송신 데모. 저장소 루트에서 `python -m tolelom.main`으로 실행한다.
 
-저장소 루트에서 `python -m tolelom.main`으로 실행한다.
-위치·상태·경로를 주기적으로, 로그·타겟 발견은 큐에 쌓인 만큼 백엔드로 보낸다.
-`get_position`/`get_status`/`get_path_points`는 아직 가짜 값이며, 제어 루프와 연결할 때 교체한다.
+get_position·get_status·get_path_points는 가짜 값이며, 제어 루프와 연결할 때 교체한다.
 """
 import logging
 import queue
@@ -15,16 +13,14 @@ from tolelom.web_socket_client import AGVWebSocketClient, resolve_backend_ws_url
 
 logger = logging.getLogger(__name__)
 
-POSITION_PERIOD_SEC = 0.1  # 10Hz
-STATUS_PERIOD_SEC = 0.5    # 2Hz
-PATH_PERIOD_SEC = 2.0      # 0.5Hz
+POSITION_PERIOD_SEC = 0.1
+STATUS_PERIOD_SEC = 0.5
+PATH_PERIOD_SEC = 2.0
 DISCONNECTED_POLL_SEC = 0.2
 LOOP_IDLE_SEC = 0.02
 SHUTDOWN_JOIN_SEC = 2.0
 
 OutboxItem = Tuple[str, Dict[str, Any]]
-
-# (type, payload) 형태로 전송 작업을 쌓아두는 큐
 outbox: "queue.Queue[OutboxItem]" = queue.Queue()
 
 
@@ -34,19 +30,16 @@ def init_websocket_client(server_url: Optional[str] = None) -> AGVWebSocketClien
     return client
 
 
-# ====== 실제 시스템에서는 여기만 하드웨어/알고리즘 값으로 교체 ======
 _fake_pos = 0.0
 
 
 def get_position() -> Tuple[float, float, float]:
-    # TODO: localization/odometry에서 읽기
     global _fake_pos
     _fake_pos += 0.1
     return _fake_pos, _fake_pos, 0.0
 
 
 def get_status() -> Dict[str, Any]:
-    # TODO: 내부 상태머신/센서에서 읽기
     return {
         "mode": "auto",
         "state": "moving",
@@ -66,14 +59,12 @@ def get_status() -> Dict[str, Any]:
 
 
 def get_path_points() -> List[Dict[str, Any]]:
-    # TODO: planner에서 최신 경로 가져오기
     now = datetime.now().isoformat()
     return [
         {"x": 10.5, "y": 20.3, "angle": 0.0, "timestamp": now},
         {"x": 12.0, "y": 22.0, "angle": 0.0, "timestamp": now},
         {"x": 15.0, "y": 25.0, "angle": 0.0, "timestamp": now},
     ]
-# =====================================================================
 
 
 def enqueue_log(msg: str, level: str = "info") -> None:
@@ -85,7 +76,7 @@ def enqueue_target_found(enemy: Dict[str, Any]) -> None:
 
 
 def drain_outbox(client: AGVWebSocketClient, box: "queue.Queue[OutboxItem]") -> int:
-    """큐에 쌓인 비주기 이벤트를 모두 보낸다. 보낸 개수를 반환한다."""
+    """보낸 개수를 반환한다."""
     sent = 0
     while True:
         try:
@@ -110,27 +101,23 @@ def send_loop(
     path_period: float = PATH_PERIOD_SEC,
     box: "queue.Queue[OutboxItem]" = outbox,
 ) -> None:
-    """stop_evt가 set될 때까지 주기 메시지와 outbox 이벤트를 보낸다."""
     next_pos = next_status = next_path = time.monotonic()
     was_connected = False
 
     while not stop_evt.is_set():
-        # 연결 안 되어 있으면 잠깐 쉬고 다시 확인한다. 재연결 자체는 클라이언트가 한다.
         if not client.connected:
             was_connected = False
             stop_evt.wait(DISCONNECTED_POLL_SEC)
             continue
 
-        # 재연결 직후엔 schedule을 현재 시각으로 리셋한다. 연결 단절 동안 next_* < now가 누적되어
-        # 한 사이클에 position/status/path가 연속 발사되는 catch-up burst를 막는다.
+        # 끊긴 동안 밀린 주기를 재연결 직후 한꺼번에 보내지 않도록 일정을 지금으로 되돌린다.
         if not was_connected:
             next_pos = next_status = next_path = time.monotonic()
             was_connected = True
 
         now = time.monotonic()
 
-        # 데이터 소스(get_*)나 전송에서 난 예외 한 번에 송신 스레드가 죽으면, 메인 스레드는
-        # 살아 있는데 아무것도 보내지 않는 상태가 된다. 사이클 단위로 격리하고 다음 주기로 넘어간다.
+        # 예외 한 번에 송신 스레드가 죽으면 프로세스는 살아 있는데 아무것도 안 보내게 된다.
         try:
             if now >= next_pos:
                 next_pos += pos_period
@@ -170,8 +157,6 @@ def main() -> None:
         logger.info("주기 전송 중... (Ctrl+C로 종료)")
         while True:
             time.sleep(1)
-            # 예시: 이벤트성 메시지
-            # enqueue_target_found({...})
     except KeyboardInterrupt:
         logger.info("종료 중...")
     finally:
