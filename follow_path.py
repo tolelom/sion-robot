@@ -85,7 +85,7 @@ class _MotionRunner:
         except Exception:
             logger.exception("pose_update_cb raised")
 
-    def _sleep(self, sec: float) -> bool:
+    def sleep(self, sec: float) -> bool:
         """sec초 대기. cancel되면 즉시 True를 반환한다."""
         if self._cancel_event is not None:
             return self._cancel_event.wait(timeout=sec)
@@ -121,7 +121,7 @@ class _MotionRunner:
                 self.report_pose()
 
             sleep_t = max(0.0, self.step_sec - (time.monotonic() - now))
-            if sleep_t > 0 and self._sleep(sleep_t):
+            if sleep_t > 0 and self.sleep(sleep_t):
                 break
 
         self.robot.stop()
@@ -172,11 +172,14 @@ def _execute_enemy_action(runner: _MotionRunner, omega_turn_norm: float, scale_o
 
     for sid, angle in SERVO_ATTACK_HIT.items():
         robot.set_servo(sid, angle, SERVO_SPEED, SERVO_ATTACK_HIT_TIME)
-    time.sleep(SERVO_ATTACK_PAUSE_SEC)
+    # 대기 중 취소되어도 팔은 초기 자세로 돌려놓는다(대기만 건너뛴다).
+    cancelled = runner.sleep(SERVO_ATTACK_PAUSE_SEC)
 
     for sid, angle in SERVO_INIT_ANGLES.items():
         robot.set_servo(sid, angle, SERVO_SPEED, SERVO_TIME)
-    time.sleep(SERVO_ATTACK_PAUSE_SEC)
+    if cancelled or runner.sleep(SERVO_ATTACK_PAUSE_SEC):
+        logger.info("enemy action cancelled after HIT (arm reset sent)")
+        return
 
     logger.info("enemy action complete")
 
@@ -258,7 +261,7 @@ def follow_path_constant_speed(
             drive_time = runner.drive(seg_len, v_cmd, scale_v_mps)
             logger.debug("Segment %d: DRIVE len=%.3fm, v=%.2f, time=%.2fs", i, seg_len, v_cmd, drive_time)
 
-            time.sleep(SEGMENT_PAUSE_SEC)
+            runner.sleep(SEGMENT_PAUSE_SEC)
 
             if is_charge_segment and not runner.is_cancelled():
                 _execute_enemy_action(runner, omega_turn_norm, scale_omega_rad)

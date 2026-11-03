@@ -8,6 +8,7 @@
 """
 import math
 import threading
+import time
 from typing import List, Tuple
 
 import pytest
@@ -301,3 +302,36 @@ def test_drive_integrates_full_distance(step_sec):
     )
     assert x == pytest.approx(0.02, abs=1e-9)
     assert y == pytest.approx(0.0, abs=1e-9)
+
+
+def test_enemy_action_pause_is_cancellable(monkeypatch):
+    """회귀: 공격 후 대기(기본 2초×2) 중 취소되면 바로 끝나고, 팔 초기화 명령은 보낸다."""
+    import config
+    import follow_path
+
+    monkeypatch.setattr(follow_path, "SERVO_ATTACK_PAUSE_SEC", 30.0)
+    monkeypatch.setattr(follow_path, "SEGMENT_PAUSE_SEC", 0.0)
+    cancel = threading.Event()
+
+    class CancelOnHit(SpyRobot):
+        def set_servo(self, servo_id, angle, speed=1, time=180):
+            super().set_servo(servo_id, angle, speed, time)
+            if (servo_id, angle) in config.SERVO_ATTACK_HIT.items():
+                cancel.set()
+
+    robot = CancelOnHit()
+    t0 = time.monotonic()
+    follow_path_constant_speed(
+        robot,
+        [(0.0, 0.0), (0.01, 0.0)],
+        is_enemy_goal=True,
+        v_charge_norm=1.0,
+        omega_turn_norm=1.0,
+        scale_v_mps=1.0,
+        scale_omega_rad=1000.0,
+        step_sec=0.001,
+        cancel_event=cancel,
+    )
+    assert time.monotonic() - t0 < 5.0
+    sent = [(sid, a) for sid, a, _, _ in robot.servo_calls]
+    assert sent[-len(config.SERVO_INIT_ANGLES):] == list(config.SERVO_INIT_ANGLES.items())
