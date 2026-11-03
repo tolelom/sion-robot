@@ -1,7 +1,7 @@
 """scripts/ 보조 스크립트 스모크 테스트 (하드웨어가 필요 없는 것만)."""
 import json
 
-import config
+from sion_robot import config
 from scripts import generate_smallroom_map, show_map
 
 

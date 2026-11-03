@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from map_loader import CellType, cell_to_world, load_map, world_to_cell
+from sion_robot.map_loader import CellType, cell_to_world, load_map, world_to_cell
 
 
 def _write_map(tmp_path: Path, payload: dict) -> Path:
@@ -125,7 +125,7 @@ class TestCoordinateConversion:
 
 def test_config_map_file_loads_regardless_of_cwd(tmp_path, monkeypatch):
     """회귀: 저장소 밖에서 실행해도 config.MAP_FILE을 찾아야 한다."""
-    import config
+    from sion_robot import config
 
     monkeypatch.chdir(tmp_path)
     m = load_map(config.MAP_FILE)

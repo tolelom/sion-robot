@@ -8,12 +8,12 @@ import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import (
+from .config import (
     MOTION_STEP_SEC, OMEGA_TURN_NORM, SCALE_OMEGA_RAD, SCALE_V_MPS, SEGMENT_PAUSE_SEC,
     SERVO_ATTACK_HIT_ANGLES, SERVO_ATTACK_HIT_TIME, SERVO_ATTACK_PAUSE_SEC, SERVO_ATTACK_PREP,
     SERVO_ATTACK_TURN_DEG, SERVO_INIT_ANGLES, SERVO_SPEED, SERVO_TIME, V_CHARGE_NORM, V_CRUISE_NORM,
 )
-from hardware import RobotBase
+from .hardware import RobotBase
 
 logger = logging.getLogger(__name__)
 

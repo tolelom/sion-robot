@@ -2,10 +2,10 @@ import random
 import time
 from typing import Any, Dict, NamedTuple, Optional
 
-from config import AUTO_INTERVAL_SEC, INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
-from map_loader import MapData, world_to_cell
-from path_planner import plan_path_for_goal
-from state import MODE_AUTO, MODE_MANUAL, VALID_MODES, AGVState, Cell
+from .config import AUTO_INTERVAL_SEC, INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
+from .map_loader import MapData, world_to_cell
+from .path_planner import plan_path_for_goal
+from .state import MODE_AUTO, MODE_MANUAL, VALID_MODES, AGVState, Cell
 
 RANDOM_GOAL_MAX_TRIES = 80
 

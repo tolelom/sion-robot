@@ -41,16 +41,16 @@ flowchart LR
 
 | 경로 | 책임 |
 |---|---|
-| `controller.py` | 진입점. 메인 루프, 카메라 스레드, 이동 스레드 관리 |
-| `state.py` | 스레드 간 공유 상태(lock 기반) |
-| `mode_manager.py` | 자동/수동 모드 전환, 무작위 목표 선정 |
-| `path_planner.py` | 팽창 → A* → 평활화 → 돌진 구간 파이프라인 |
-| `astar.py` | 일반 A*와 적 추적용 A* |
-| `path_utils.py` | 시야선 검사, 평활화, 팽창, Bresenham, 돌진 구간 |
-| `follow_path.py` | 위치 추정과 경로 추종, 적 도달 동작 |
-| `hardware.py` | 로봇 인터페이스와 JETANK·더미 구현 |
-| `map_loader.py` | JSON 맵 로드, 셀↔월드 좌표 변환 |
-| `config.py` | 속도, 팽창 반경, 서보 각도 등 상수. 맵 경로는 저장소 기준 절대 경로 |
+| `sion_robot/controller.py` | 진입점. 메인 루프, 카메라 스레드, 이동 스레드 관리 |
+| `sion_robot/state.py` | 스레드 간 공유 상태(lock 기반) |
+| `sion_robot/mode_manager.py` | 자동/수동 모드 전환, 무작위 목표 선정 |
+| `sion_robot/path_planner.py` | 팽창 → A* → 평활화 → 돌진 구간 파이프라인 |
+| `sion_robot/astar.py` | 일반 A*와 적 추적용 A* |
+| `sion_robot/path_utils.py` | 시야선 검사, 평활화, 팽창, Bresenham, 돌진 구간 |
+| `sion_robot/follow_path.py` | 위치 추정과 경로 추종, 적 도달 동작 |
+| `sion_robot/hardware.py` | 로봇 인터페이스와 JETANK·더미 구현 |
+| `sion_robot/map_loader.py` | JSON 맵 로드, 셀↔월드 좌표 변환 |
+| `sion_robot/config.py` | 속도, 팽창 반경, 서보 각도 등 상수. 맵 경로는 저장소 루트(`BASE_DIR`) 기준 절대 경로 |
 | `scripts/` | 보조 스크립트: 맵·경로 시각화(`show_map`, `show_path`), 맵 생성(`generate_smallroom_map`), 모터 캘리브레이션(`calib_motion`), 모터 동작 확인(`motor_smoke_test`) |
 | `tests/` | pytest 단위·통합 테스트. `conftest.py`의 `make_map`으로 문자열 격자에서 맵을 만든다. 하드웨어 없이 돈다 |
 | `tests/fixtures/pathfinding-cases.json` | sion-api `contract/pathfinding-cases.json`의 복사본. `astar_normal`과 sion-api A*가 같이 통과해야 하는 케이스 |
@@ -64,16 +64,16 @@ git clone https://github.com/tolelom/sion-robot.git
 cd sion-robot
 
 pip install -r requirements-dev.txt opencv-python
-python controller.py
+python -m sion_robot.controller
 ```
 
-`jetbot`이나 `SCSCtrl`을 import하지 못하면 `DummyRobot`으로 넘어가므로 데스크톱에서도 실행할 수 있다. OpenCV가 없으면 카메라 스레드만 건너뛴다. 맵 파일은 `config.py`의 `MAP_FILE`로 정한다.
+`jetbot`이나 `SCSCtrl`을 import하지 못하면 `DummyRobot`으로 넘어가므로 데스크톱에서도 실행할 수 있다. OpenCV가 없으면 카메라 스레드만 건너뛴다. 맵 파일은 `sion_robot/config.py`의 `MAP_FILE`로 정한다.
 
-`scripts/`는 루트 모듈을 import하므로 저장소 루트에서 `python -m`으로 실행한다.
+제어 코드는 `sion_robot` 패키지다. `scripts/`와 `python -m` 명령은 패키지를 import하므로 저장소 루트에서 실행한다.
 
 | 명령 | 용도 |
 |---|---|
-| `python controller.py` | 제어 루프 실행 |
+| `python -m sion_robot.controller` | 제어 루프 실행 |
 | `python -m pytest` | 테스트 |
 | `python -m scripts.show_map [맵 파일]` | 맵 시각화 |
 | `python -m scripts.show_path` | `MAP_FILE`의 시작점→첫 적 경로 시각화 |

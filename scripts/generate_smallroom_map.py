@@ -5,7 +5,7 @@
 import json
 import os
 
-from config import BASE_DIR
+from sion_robot.config import BASE_DIR
 
 WIDTH, HEIGHT = 60, 60
 RESOLUTION_M = 0.05

@@ -2,8 +2,8 @@
 
 대상: line_of_sight, smooth_path_cells, inflate_map, bresenham_line, attach_charge_segment.
 """
-from map_loader import CellType
-from path_utils import (
+from sion_robot.map_loader import CellType
+from sion_robot.path_utils import (
     attach_charge_segment,
     bresenham_line,
     inflate_map,

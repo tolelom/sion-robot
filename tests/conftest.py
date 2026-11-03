@@ -1,17 +1,9 @@
-"""pytest 공통 fixture.
-
-저장소 루트의 모듈들은 `from map_loader import ...` 처럼 최상위 import를 쓰므로
-sys.path에 저장소 루트를 추가해 테스트에서도 같은 import가 동작하도록 한다.
-"""
-import os
-import sys
+"""pytest 공통 fixture."""
 from typing import List
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from map_loader import CellType, MapData  # noqa: E402
+from sion_robot.map_loader import CellType, MapData
 
 
 def _parse_grid(grid_str: str) -> List[List[CellType]]:

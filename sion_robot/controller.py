@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import logging
 import math
 import os
@@ -7,16 +6,16 @@ import threading
 import time
 from typing import Optional
 
-from config import (
+from .config import (
     CAMERA_POLL_SEC, INFLATE_RADIUS_CELLS, MAP_FILE, MIN_CHARGE_CELLS, MOTION_STEP_SEC, OMEGA_TURN_NORM,
     POSE_PERIOD_SEC, SCALE_OMEGA_RAD, SCALE_V_MPS, V_CHARGE_NORM, V_CRUISE_NORM,
 )
-from follow_path import follow_path_constant_speed
-from hardware import RobotBase, create_robot
-from map_loader import MapData, cell_to_world, load_map, world_to_cell
-from mode_manager import ModeManager
-from path_planner import plan_path_for_goal
-from state import MODE_MANUAL, AGVState, Cell
+from .follow_path import follow_path_constant_speed
+from .hardware import RobotBase, create_robot
+from .map_loader import MapData, cell_to_world, load_map, world_to_cell
+from .mode_manager import ModeManager
+from .path_planner import plan_path_for_goal
+from .state import MODE_MANUAL, AGVState, Cell
 
 logger = logging.getLogger(__name__)
 

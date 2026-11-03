@@ -1,9 +1,9 @@
 from typing import List, Tuple, Optional
 
-from map_loader import MapData
-from astar import astar_normal, astar_enemy
-from path_utils import smooth_path_cells, inflate_map, attach_charge_segment
-from config import INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
+from .map_loader import MapData
+from .astar import astar_normal, astar_enemy
+from .path_utils import smooth_path_cells, inflate_map, attach_charge_segment
+from .config import INFLATE_RADIUS_CELLS, MIN_CHARGE_CELLS
 
 
 def plan_path_for_goal(

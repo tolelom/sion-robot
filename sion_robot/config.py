@@ -1,7 +1,7 @@
 import os
 
-# 데이터 파일은 실행 위치(cwd)가 아니라 저장소 기준으로 찾는다.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 데이터 파일은 실행 위치(cwd)가 아니라 저장소 루트 기준으로 찾는다.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MAP_FILE = os.path.join(BASE_DIR, "map_smallroom_60x60.json")
 
