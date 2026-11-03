@@ -12,21 +12,20 @@ Sion은 LoL 챔피언 사이온의 궁극기(목표를 향한 직선 돌진)를 
 
 ## 시스템 구성
 
+Sion은 데모 전용으로 동작한다. 대시보드는 sion-api에 붙고, sion-api 안의 시뮬레이터가 AGV 역할을 한다. 이 저장소의 코드는 JETANK에서 단독으로 돌며 서버와 연결되지 않는다.
+
 ```mermaid
 flowchart LR
-    Web["sion-web<br/>대시보드"] -- "WebSocket<br/>상태 수신, 명령 전송" --> API["sion-api<br/>Go Fiber"]
+    Web["sion-web<br/>대시보드"] -- "WebSocket<br/>상태 수신, 명령 전송" --> API["sion-api<br/>Go Fiber + AGV 시뮬레이터"]
     Web -- "REST<br/>A* 경로 요청" --> API
-    API -. "WebSocket<br/>원래 구성" .-> Robot["sion-robot<br/>Jetson AGV 제어"]
-    API -- "데모" --> Sim["AGV 시뮬레이터"]
+    Robot["sion-robot<br/>JETANK 단독 실행"]
 ```
 
 | 저장소 | 역할 |
 |---|---|
 | [sion-web](https://github.com/tolelom/sion-web) | 관제 대시보드 |
-| [sion-api](https://github.com/tolelom/sion-api) | A* 경로 탐색, 데모용 AGV 시뮬레이터. 원래 구성에서는 AGV와 대시보드 사이 상태 중계 |
-| sion-robot | AGV 제어. 경로 계획, 경로 추종, 적 돌진(이 저장소) |
-
-공개 데모는 이 코드 대신 sion-api의 시뮬레이터로 동작한다.
+| [sion-api](https://github.com/tolelom/sion-api) | 대시보드용 WebSocket·REST 서버. 내장 시뮬레이터가 AGV 역할을 한다 |
+| sion-robot | JETANK 제어. 경로 계획, 경로 추종, 적 돌진(이 저장소). 서버와 연결되지 않는다 |
 
 ## 기능
 
