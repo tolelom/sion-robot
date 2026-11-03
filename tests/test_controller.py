@@ -147,3 +147,31 @@ def test_safe_release_swallows_errors():
 
     assert controller._safe_release(Cap()) is None
     assert controller._safe_release(None) is None
+
+
+class TestEndCell:
+    """회귀: 계획 실패 시 로봇 위치를 목표 셀로 착각하지 않아야 한다."""
+
+    def test_move_worker_returns_start_when_no_path(self, monkeypatch):
+        m = make_map("""
+            S # .
+            # # .
+            . . .
+        """)
+        monkeypatch.setattr(controller, "INFLATE_RADIUS", 0)
+        end = controller.move_worker(FakeRobot(), m, (0, 0), (2, 2), False, AGVState())
+        assert end == (0, 0)
+
+    def test_move_worker_returns_goal_after_follow(self, open_map, monkeypatch):
+        monkeypatch.setattr(controller, "follow_path_constant_speed", lambda **kw: None)
+        end = controller.move_worker(FakeRobot(), open_map, (0, 0), (4, 0), False, AGVState())
+        assert end == (4, 0)
+
+    def test_move_job_exposes_end_cell(self, open_map, monkeypatch):
+        monkeypatch.setattr(controller, "follow_path_constant_speed", lambda **kw: None)
+        job = controller.MoveJob(FakeRobot(), open_map, (0, 0), (4, 0), False, AGVState(), threading.Event())
+        assert job.end_cell == (0, 0)
+        job.start()
+        job.join(2.0)
+        assert not job.is_alive()
+        assert job.end_cell == (4, 0)
