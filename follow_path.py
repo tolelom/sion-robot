@@ -91,8 +91,11 @@ def follow_path_constant_speed(
     pose_update_cb: Optional[Callable[[float, float, float], None]] = None,
     step_sec: float = STEP_SEC,
     cancel_event: Optional[threading.Event] = None,
+    theta0: float = 0.0,
 ) -> Tuple[float, float, float]:
     """
+    - theta0: 출발 시 로봇이 바라보는 방향(rad). 직전 이동이 끝난 방향을 넘겨야
+      첫 TURN 각도가 맞는다.
     - TURN / DRIVE 구간을 step_sec 단위로 쪼개서:
       * 모터 명령 유지
       * pose_est.update(...) 지속 호출
@@ -108,12 +111,12 @@ def follow_path_constant_speed(
     if len(waypoints_world) < 2:
         logger.warning("Waypoints too short")
         x0, y0 = waypoints_world[0] if waypoints_world else (0.0, 0.0)
-        return (x0, y0, 0.0)
+        return (x0, y0, theta0)
 
     # 초기 pose를 첫 웨이포인트 중심으로 설정
     x0, y0 = waypoints_world[0]
-    pose_est = PoseEstimator(x0, y0, theta0=0.0)
-    theta_est = 0.0
+    pose_est = PoseEstimator(x0, y0, theta0=theta0)
+    theta_est = theta0
 
     def safe_cb() -> None:
         # pose_update_cb는 외부 입력. 거기서 던진 예외가 모터 정지 흐름까지 깨지 않게 격리.
