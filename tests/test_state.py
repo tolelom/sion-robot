@@ -42,8 +42,9 @@ class TestSetters:
 
     def test_set_mode_rejects_invalid(self):
         s = AGVState()
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             s.set_mode("turbo")
+        assert s.get_mode() == "auto"
 
     def test_set_goal_cell_round_trip(self):
         s = AGVState()

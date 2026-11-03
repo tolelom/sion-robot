@@ -58,7 +58,9 @@ class AGVState:
             return dict(self._state)
 
     def set_mode(self, mode: str) -> None:
-        assert mode in ("auto", "manual"), f"Invalid mode: {mode}"
+        # assert는 python -O에서 사라지므로 명시적으로 검사한다.
+        if mode not in ("auto", "manual"):
+            raise ValueError(f"Invalid mode: {mode!r}")
         with self._lock:
             self._state["mode"] = mode
 
