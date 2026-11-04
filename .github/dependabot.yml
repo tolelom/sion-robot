@@ -1,6 +1,7 @@
 version: 2
 
 # 주 1회 묶어서 올린다. minor·patch는 생태계별 PR 하나로, major는 따로 온다.
+# GitHub Actions는 major까지 한 PR로 묶는다(액션 major는 대개 런타임 교체라 함께 검증한다).
 updates:
   - package-ecosystem: "pip"
     directory: "/"
@@ -26,6 +27,5 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      github-actions-minor-patch:
+      github-actions-all:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
