@@ -1,14 +1,10 @@
 __pycache__/
 *.pyc
 *.pyo
-.idea/
 .vscode/
 .env
-.DS_Store
 
 # Test / coverage artifacts
 .coverage
 .coverage.*
-.pytest_cache/
-htmlcov/
 coverage.xml
