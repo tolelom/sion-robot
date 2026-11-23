@@ -32,4 +32,4 @@ sion-api는 양옆 칸이 모두 비어야 대각으로 움직이고, 이 저장
 
 ## CI
 
-GitHub Actions(`.github/workflows/ci.yml`)가 `main`·`master` push와 PR마다 Python 3.12로 pytest를 돌리고, `sion_robot` 커버리지가 80% 미만이면 실패합니다.
+GitHub Actions(`.github/workflows/ci.yml`)가 `main` push와 PR마다 Python 3.12로 pytest를 돌리고, `sion_robot` 커버리지가 80% 미만이면 실패합니다.
