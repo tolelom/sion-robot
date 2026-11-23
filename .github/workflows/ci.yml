@@ -1,4 +1,4 @@
-name: Sion Robot Tests
+name: ci
 
 on:
   push:
